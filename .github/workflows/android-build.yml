@@ -1,0 +1,75 @@
+# Android build for the mobile client.
+#
+# Separate from ci.yml because this needs a JDK, the Android SDK, and the NDK, and
+# takes far longer than the JavaScript checks. It is the check that catches a native
+# dependency or Gradle break, which no JavaScript test can see.
+#
+# Runs on pushes to main and on manual dispatch. Branch PRs get ci.yml only.
+
+name: Android build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  assemble-debug:
+    name: assembleDebug
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: FinanceAI
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: FinanceAI/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('FinanceAI/android/**/*.gradle') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - run: npm ci
+
+      # Metro must be reachable for the debug bundle's dev-server settings, but
+      # assembleDebug does not need it: it packages the app and loads JS from
+      # Metro at runtime. The JS itself is proven by ci.yml's bundle check.
+      - name: Assemble debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --console=plain
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: FinanceAI/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+      # A successful build that packaged an empty entry module once shipped a
+      # broken app, so the artifact is inspected rather than trusted.
+      - name: Confirm the APK is not empty
+        run: |
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh android/app/build/outputs/apk/debug/app-debug.apk

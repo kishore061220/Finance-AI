@@ -1,0 +1,157 @@
+# Continuous integration for the FinanceAI suite.
+#
+# Four jobs, one per component, so a failure names the part that broke instead of
+# failing one opaque pipeline. Every job here is a check that can be reproduced
+# locally with the same command - see docs/verification.md.
+#
+# The Android APK build is a separate workflow (android-build.yml) because it
+# needs a JDK and the Android SDK and takes far longer than the rest.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  api:
+    name: API (pytest, migrations)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: finance-ai-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: finance-ai-api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Byte-compile
+        run: python -m compileall -q app main.py
+
+      # The suite runs against an in-memory SQLite database created by conftest,
+      # so no database service is needed and no live database is contacted.
+      - name: Tests
+        run: python -m pytest -q
+
+      # The ML package must not import the API - it is standalone and used
+      # offline. This job installs only what the API needs.
+      - name: Migration history is coherent
+        run: python -m alembic history | head -20
+
+  ml:
+    name: ML (pytest, feature parity with the API)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: finance-ai-ml
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: finance-ai-ml/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Tests
+        run: python -m pytest -q
+
+      # The two packages order their 31 features differently on purpose, and the
+      # scorer projects onto the order the artifact recorded. What must never drift
+      # is the set of names: a rename on one side only is dropped silently at
+      # scoring time. app/tests/test_feature_parity.py asserts exactly that, and
+      # app.ml.features imports stdlib only, so it runs with this job's deps.
+      - name: Feature contract agrees with the API
+        run: |
+          python -m pytest ../finance-ai-api/app/tests/test_feature_parity.py -q
+
+  web:
+    name: Web (lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: finance-ai-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: finance-ai-frontend/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      # A build that succeeds but ships an empty entry module is the exact failure
+      # this suite already caught once, so the artifact is checked for the app
+      # shell rather than trusted because the exit code was 0.
+      - name: Build and confirm the app shell is in the bundle
+        run: |
+          npm run build
+          grep -rl "Restoring your session" dist/assets/*.js
+
+  mobile:
+    name: Mobile (tsc, lint, jest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: FinanceAI
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The mobile package declares "node": ">= 22.11.0".
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: FinanceAI/package-lock.json
+
+      - run: npm ci
+
+      - name: Types
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test -- --runInBand
+
+      # Metro resolves `require()` of native modules at bundle time; a bundle that
+      # cannot be produced here would fail only at release.
+      - name: Bundle check
+        run: |
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output /tmp/index.android.bundle \
+            --assets-dest /tmp/assets

@@ -1,0 +1,28 @@
+[project]
+name = "finance-ai-ml"
+version = "1.0.0"
+description = "Offline training for the Finance-AI fraud model."
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "xgboost>=2.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "pyarrow>=15.0"]
+
+[project.scripts]
+finance-ai-ml = "finance_ai_ml.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["finance_ai_ml*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

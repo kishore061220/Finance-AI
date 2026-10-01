@@ -1,0 +1,27 @@
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Trained model artifacts.
+#
+# fraud_model.pkl is a pickle: it is executable when loaded, and it is large and
+# reproducible from the training data. Train it on the machine that scores, or
+# export it deliberately with finance_ai_ml.export.export_to_backend.
+ml_artifacts/
+*.pkl
+
+# Exports and reports produced locally
+exports/
+reports/
+*.csv
+*.html
+
+# Secrets
+.env
+.env.*
+!.env.example

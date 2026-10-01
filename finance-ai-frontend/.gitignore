@@ -1,0 +1,40 @@
+# Build output
+dist
+dist-ssr
+*.local
+
+# Dependencies
+node_modules
+
+# Test and coverage output
+coverage
+.vitest
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Firebase web config. These are not secrets in the usual sense - the API key is
+# meant to be public and restricted by domain - but committing them means every
+# deployment needs a code change, so they stay local.
+.env.development.firebase
+.env.production.firebase
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

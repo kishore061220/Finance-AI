@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn"
+  },
+  "rules": {
+    /**
+     * Turned off deliberately: the project uses the automatic JSX runtime
+     * (`jsx: "react-jsx"`), which compiles JSX to `_jsx()` calls and does not
+     * reference `React` in the source. The rule assumes the classic runtime and
+     * would otherwise demand a `React` import in every file.
+     */
+    "react/react-in-jsx-scope": "off",
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react/no-unescaped-entities": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-floating-promises": "error",
+    "no-console": ["warn", { "allow": ["warn", "error"] }]
+  },
+  "ignorePatterns": ["dist", "node_modules", "coverage"]
+}

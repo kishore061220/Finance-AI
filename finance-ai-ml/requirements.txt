@@ -1,0 +1,13 @@
+# Core numerics for feature engineering and training.
+pandas==3.0.5
+numpy==2.5.2
+scikit-learn==1.9.0
+# Preferred estimator. The module falls back to sklearn's
+# HistGradientBoostingClassifier when this is not installed.
+xgboost==3.4.1
+
+# Test tooling.
+pytest==9.1.1
+
+# Needed for the parquet paths exercised in test_dataset.py.
+pyarrow==23.0.1

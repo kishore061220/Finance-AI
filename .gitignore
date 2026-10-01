@@ -1,0 +1,58 @@
+# Root ignores for the whole FinanceAI workspace.
+#
+# Component-level ignores still apply on their own: finance-ai-api/.gitignore,
+# finance-ai-frontend/.gitignore, FinanceAI/.gitignore, finance-ai-ml/.gitignore.
+# This file covers what is shared, plus the traps that live at the root.
+
+# Python (a stray venv exists at the root as well as inside the components)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Secrets.
+#
+# finance-ai-api/.env currently holds a live DB_PASSWORD in plaintext. Ignore
+# every .env here as a backstop for the component that has not been given one.
+.env
+.env.*
+!.env.example
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local database copies.
+#
+# database/backup/finance_ai_backup_pre_migration.json is a real snapshot of the
+# live finance_ai database - 5 users, 9 transactions, 2 budgets. It stays on disk
+# for reference but must not be committed: it is production data, and the backup
+# it came from is only trustworthy because it is not public.
+database/backup/*.json
+*.sql
+*.dump
+
+# Model artifacts, wherever they are trained.
+#
+# *.pkl is a pickle: it is executable when loaded, large, and reproducible from
+# the training data. finance-ai-ml/.gitignore covers its own directory; this
+# covers the backend's ml_artifacts/ so a locally trained model is not committed.
+ml_artifacts/
+*.pkl
+
+# Build and tool output
+dist/
+build/
+coverage/
+*.log
+*.apk
+*.aab
+*.ipa
+.metro-health-check*

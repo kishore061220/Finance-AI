@@ -1,0 +1,81 @@
+# ---------------------------------------------------------------------------
+# Secrets - never commit
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+service-account*.json
+firebase-service-account*.json
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ---------------------------------------------------------------------------
+# Test / tooling caches
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# ---------------------------------------------------------------------------
+# Trained model artifacts
+#
+# These are produced by training runs and must not be committed: they are large,
+# environment-specific, and only meaningful when paired with a data snapshot.
+# ---------------------------------------------------------------------------
+ml_artifacts/
+*.pkl
+*.joblib
+*.scaler
+*.onnx
+
+# ---------------------------------------------------------------------------
+# Local data, exports and uploads
+# ---------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+uploads/
+backups/
+local_backups/
+exports/
+*.xlsx
+*.csv
+*.pdf
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
