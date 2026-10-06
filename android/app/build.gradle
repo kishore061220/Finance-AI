@@ -3,6 +3,30 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 /**
+ * Google Services, for @react-native-firebase.
+ *
+ * Applied only when `app/google-services.json` exists. The file is per-project
+ * and per-app credentials, so it is not committed. Applying the plugin
+ * unconditionally would make every build fail with an opaque "File
+ * google-services.json is missing" error for anyone who clones the repo without
+ * their own Firebase project, which would also block the offline build.
+ *
+ * The app degrades rather than crashes when Firebase is absent: see
+ * `src/auth/SessionProvider.tsx`, which falls back to the backend's
+ * development-token endpoint, and the README for how to enable Firebase.
+ */
+def googleServicesFile = file("google-services.json")
+if (googleServicesFile.exists()) {
+    apply plugin: "com.google.gms.google-services"
+} else {
+    logger.info(
+        "google-services.json not found - Firebase Auth and push messaging are " +
+        "disabled for this build. The app will use the backend development-token " +
+        "sign-in path instead."
+    )
+}
+
+/**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */

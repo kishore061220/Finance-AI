@@ -38,3 +38,7 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# TypeScript incremental build cache. Generated, machine-specific, and it must never be
+# committed: a cache written on another OS makes 	sc -b fail with ENOENT.
+*.tsbuildinfo

@@ -1,91 +1,97 @@
-# FinanceAI
+This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
-Personal-finance platform: a FastAPI backend, a React web client, a React Native
-mobile client, and a standalone fraud-model training package.
+# Getting Started
 
-## Components
+> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
 
-| Directory | What it is | Entry point |
-| --- | --- | --- |
-| `finance-ai-api/` | FastAPI backend: auth, transactions, budgets, fraud, loans, backups, notifications, forecast | `main.py` → `app:app` |
-| `finance-ai-frontend/` | React 19 + Vite + Tailwind web client | `src/main.tsx` → `src/App.tsx` |
-| `FinanceAI/` | React Native (0.87) iOS/Android client | `index.js` → `App.tsx` |
-| `finance-ai-ml/` | Standalone fraud-model training package | `finance_ai_ml/train.py` |
-| `database/` | Schema reference, migration notes, pre-migration live backup | `schema/`, `backup/` |
-| `docs/` | Architecture, API contract, verification record, project report | `README.md` in `docs/` |
+## Step 1: Start Metro
 
-Each component has its own README with the commands it needs. Start with the one
-for the part you are changing.
+First, you will need to run **Metro**, the JavaScript build tool for React Native.
 
-## Running the stack
+To start the Metro dev server, run the following command from the root of your React Native project:
 
-Backend first, since both clients talk to it:
+```sh
+# Using npm
+npm start
 
-```powershell
-# 1. API - http://localhost:8000
-cd finance-ai-api
-.\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
-
-# 2a. Web - http://localhost:5173, proxies /api to the backend
-cd finance-ai-frontend
-npm run dev
-
-# 2b. Mobile
-cd FinanceAI
-npm start           # Metro
-npm run android     # or: npx react-native run-ios
+# OR using Yarn
+yarn start
 ```
 
-The web client calls a relative `/api` path and relies on the dev-server proxy,
-so there is no absolute API URL to configure. `VITE_API_BASE_URL` only matters
-when the API is hosted on a different origin from the static assets.
+## Step 2: Build and run your app
 
-## Authentication
+With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
 
-Clients authenticate with `Authorization: Bearer <token>`. No endpoint trusts a
-`user_id` from the client; every query is scoped to the token's identity on the
-server.
+### Android
 
-- **Firebase** is the production path. Both clients call `GET /api/auth/config`
-  first and branch on the reported provider, so a deployment without Firebase
-  files renders a developer sign-in instead of failing on a native module.
-- **Development tokens** are available only when the backend runs with
-  `ALLOW_DEV_AUTH=true` *and* no Firebase project configured. The backend returns
-  404 for `/api/auth/dev-token` otherwise, so the local path cannot be reached in
-  a Firebase deployment.
+```sh
+# Using npm
+npm run android
 
-## Verification record
+# OR using Yarn
+yarn android
+```
 
-Reproduced on this machine:
+### iOS
 
-| Component | Command | Result |
-| --- | --- | --- |
-| API | `pytest -q` | 255 passed |
-| ML | `pytest -q` | 65 passed |
-| Web | `npm run typecheck` / `npm run lint` / `npm test -- --run` / `npm run build` | clean / clean / 98 passed / built |
-| Mobile | `npx tsc --noEmit` / `npm run lint` / `npm test -- --runInBand` | clean / 0 errors / 41 passed |
-| Mobile Android | `gradlew :app:assembleDebug` | `BUILD SUCCESSFUL` → `app-debug.apk` |
-| Mobile bundle | `react-native bundle --platform android --dev false` | bundle written |
+For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
 
-`docs/verification.md` records what each of these covers and what remains
-unverified, including the checks that need real credentials or a device.
+The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
 
-## Security notes
+```sh
+bundle install
+```
 
-- The live database `finance_ai` was treated as read-only throughout. No migration
-  or cutover was run against it.
-- The live `DB_PASSWORD` was exposed in a committed `.env`. **Rotate it before
-  deploying.** The credential was not read or copied anywhere.
-- `finance-ai-api/.env` and any Firebase/Google credentials stay out of version
-  control; `.env.example` documents the variable names.
+Then, and every time you update your native dependencies, run:
 
-## Known limitations
+```sh
+bundle exec pod install
+```
 
-- iOS is unverified: no macOS/Xcode in this environment.
-- Cloud backup targets (GCS / Google Drive) and the remote assistant need provider
-  credentials; local backups and the built-in assistant work without them.
-- Receipt OCR needs on-device ML Kit, which requires Google Services files and a
-  physical Android device.
-- Production fraud-model training is intentionally refused on live data: it holds
-  9 transactions against a 50-row minimum.
+For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+
+```sh
+# Using npm
+npm run ios
+
+# OR using Yarn
+yarn ios
+```
+
+If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+
+This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+
+## Step 3: Modify your app
+
+Now that you have successfully run the app, let's make changes!
+
+Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+
+When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+
+- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
+- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+
+## Congratulations! :tada:
+
+You've successfully run and modified your React Native App. :partying_face:
+
+### Now what?
+
+- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
+- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+
+# Troubleshooting
+
+If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+
+# Learn More
+
+To learn more about React Native, take a look at the following resources:
+
+- [React Native Website](https://reactnative.dev) - learn more about React Native.
+- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
+- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
+- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
+- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.

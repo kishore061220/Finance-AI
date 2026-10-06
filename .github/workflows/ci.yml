@@ -113,17 +113,39 @@ jobs:
       # A build that succeeds but ships an empty entry module is the exact failure
       # this suite already caught once, so the artifact is checked for the app
       # shell rather than trusted because the exit code was 0.
+      #
+      # The check is a Node script rather than `grep dist/assets/*.js`: a shell
+      # glob that matches nothing makes grep report "No such file or directory",
+      # which reads like a build error but is actually a failed assertion.
       - name: Build and confirm the app shell is in the bundle
         run: |
           npm run build
-          grep -rl "Restoring your session" dist/assets/*.js
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const dir = 'dist/assets';
+            if (!fs.existsSync(dir)) {
+              console.error('dist/assets was not produced. Build output:');
+              console.error(fs.readdirSync('dist', { recursive: true }).join('\n'));
+              process.exit(1);
+            }
+            const files = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
+            if (!files.length) { console.error('No JavaScript emitted into dist/assets'); process.exit(1); }
+            const hit = files.filter(f => fs.readFileSync(path.join(dir, f), 'utf8').includes('Restoring your session'));
+            if (!hit.length) {
+              console.error('App shell marker missing from every chunk: ' + files.join(', '));
+              process.exit(1);
+            }
+            console.log('App shell present in ' + hit.join(', '));
+          "
 
   mobile:
-    name: Mobile (tsc, lint, jest)
+    name: Mobile (typecheck, lint, jest)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: FinanceAI
+    # The React Native app lives at the repository ROOT, so no working-directory
+    # is set here. This job previously pointed at a `FinanceAI/` subdirectory
+    # that only ever existed as a stray gitlink, which is why setup-node failed
+    # on a missing package-lock.json.
     steps:
       - uses: actions/checkout@v4
 
@@ -132,12 +154,12 @@ jobs:
           # The mobile package declares "node": ">= 22.11.0".
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: FinanceAI/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
 
       - name: Types
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Lint
         run: npm run lint
@@ -148,10 +170,4 @@ jobs:
       # Metro resolves `require()` of native modules at bundle time; a bundle that
       # cannot be produced here would fail only at release.
       - name: Bundle check
-        run: |
-          npx react-native bundle \
-            --platform android \
-            --dev false \
-            --entry-file index.js \
-            --bundle-output /tmp/index.android.bundle \
-            --assets-dest /tmp/assets
+        run: npm run bundle:android

@@ -1,205 +1,206 @@
-import React, {useState} from 'react';
+/**
+ * Sign in.
+ *
+ * The forms offered depend on what the *server* reports, not on what this build
+ * happens to contain. `/api/auth/config` decides:
+ *
+ *  - `firebase`      -> email/password and Google.
+ *  - `dev`           -> a development-token button, and only that. No email field,
+ *                       because there is no way to verify a password against it.
+ *  - `unconfigured`  -> nothing to offer. An explanatory message, because the
+ *                       alternative is a form that cannot succeed.
+ *
+ * Registering is a Firebase-only operation, so the "create account" toggle appears
+ * only when the server has Firebase enabled.
+ */
+
+import React, { useCallback, useState } from 'react';
+import { Text, View } from 'react-native';
+
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+  Alert as AlertBanner,
+  Button,
+  Field,
+  Input,
+  Screen,
+  Spinner,
+} from '../components/ui';
+import { useSession } from '../auth/SessionProvider';
+import { space, styles, type } from '../theme';
 
-import api from '../services/api';
+type Mode = 'signIn' | 'register';
 
-type LoginScreenProps = {
-  navigation: any;
-};
+export default function LoginScreen() {
+  const { config, signInWithEmail, signUp, signInAsDeveloper } = useSession();
 
-function LoginScreen({navigation}: LoginScreenProps) {
+  const [mode, setMode] = useState<Mode>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Missing Information', 'Please enter email and password.');
-      return;
-    }
+  const provider = config?.provider ?? null;
 
+  const run = useCallback(async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
     try {
-      setLoading(true);
-
-      const response = await api.post('/api/auth/login', {
-        email: email.trim(),
-        password,
-      });
-
-      const {user, access_token} = response.data;
-
-      console.log('Login successful');
-      console.log('User:', user);
-      console.log('Token:', access_token);
-
-      navigation.replace('Dashboard', {
-        user,
-        accessToken: access_token,
-      });
-    } catch (error: any) {
-      console.log('Login error:', error);
-
-      if (error.response) {
-        Alert.alert(
-          'Login Failed',
-          error.response.data?.detail || 'Invalid email or password.',
-        );
-      } else {
-        Alert.alert(
-          'Connection Error',
-          'Unable to connect to the Finance-AI server.\n\nMake sure FastAPI is running.',
-        );
-      }
-    } finally {
-      setLoading(false);
+      await action();
+    } catch (cause) {
+      // The provider messages are specific and already user-facing ("The password
+      // is invalid", "user not found"), so they are passed through as-is.
+      setError(cause instanceof Error ? cause.message : 'Sign in failed.');
+      setBusy(false);
     }
+  }, []);
+
+  const submitCredentials = () => {
+    void run(async () => {
+      if (mode === 'register') {
+        await signUp(email.trim(), password, name.trim());
+      } else {
+        await signInWithEmail(email.trim(), password);
+      }
+    });
   };
 
+  if (provider === null) {
+    return (
+      <Screen>
+        <View style={styles.centered}>
+          <Text style={type.title}>Finance AI</Text>
+          <Spinner label="Checking the server" />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (provider === 'unconfigured') {
+    return (
+      <Screen>
+        <View style={styles.centered}>
+          <Text style={type.title}>Finance AI</Text>
+          <AlertBanner tone="error">
+            This server has no authentication provider configured. Set up Firebase
+            Authentication, or run a local server with ALLOW_DEV_AUTH=true.
+          </AlertBanner>
+          <Text style={type.small}>
+            Sign in will return once the server is configured.
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (provider === 'dev') {
+    return (
+      <Screen>
+        <View style={styles.centered}>
+          <Text style={type.title}>Finance AI</Text>
+          <Text style={type.small}>
+            This server is running in development authentication mode. No password is
+            checked; the API mints a token for the address entered below.
+          </Text>
+
+          {error ? <AlertBanner tone="error">{error}</AlertBanner> : null}
+
+          <Field label="Email">
+            <Input
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+              placeholder="you@example.com"
+              accessibilityLabel="Email"
+            />
+          </Field>
+
+          <Button
+            label="Continue as developer"
+            onPress={() => {
+              void run(() => signInAsDeveloper(email.trim() || 'dev@example.com'));
+            }}
+            loading={busy}
+          />
+
+          <Text style={[type.small, styles.centeredText]}>
+            This path is unavailable on a server with Firebase configured, and the API
+            refuses to mint these tokens in production.
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.content}>
-        <Text style={styles.logo}>Finance-AI</Text>
-
-        <Text style={styles.title}>Welcome Back</Text>
-
-        <Text style={styles.subtitle}>
-          Login to manage your personal finances
+    <Screen>
+      <View style={styles.centered}>
+        <Text style={type.title}>Finance AI</Text>
+        <Text style={type.small}>
+          {mode === 'signIn'
+            ? 'Sign in to see your spending, budgets and loans.'
+            : 'Create an account. Email verification is handled by Firebase.'}
         </Text>
+      </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#888"
+      {error ? <AlertBanner tone="error">{error}</AlertBanner> : null}
+
+      {mode === 'register' ? (
+        <Field label="Name">
+          <Input value={name} onChangeText={setName} accessibilityLabel="Name" autoComplete="name" />
+        </Field>
+      ) : null}
+
+      <Field label="Email">
+        <Input
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
-          autoCorrect={false}
+          autoComplete="email"
+          placeholder="you@example.com"
+          accessibilityLabel="Email"
         />
+      </Field>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#888"
+      <Field
+        label="Password"
+        hint={mode === 'register' ? 'At least 6 characters.' : undefined}
+      >
+        <Input
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          autoCapitalize="none"
+          autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+          placeholder="••••••••"
+          accessibilityLabel="Password"
         />
+      </Field>
 
-        <TouchableOpacity
-          style={styles.loginButton}
-          onPress={handleLogin}
-          disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.loginButtonText}>Login</Text>
-          )}
-        </TouchableOpacity>
+      <Button
+        label={mode === 'signIn' ? 'Sign in' : 'Create account'}
+        onPress={submitCredentials}
+        loading={busy}
+        disabled={email.trim() === '' || password === '' || (mode === 'register' && name.trim() === '')}
+      />
 
-        <View style={styles.registerContainer}>
-          <Text style={styles.registerText}>Don't have an account? </Text>
+      {config?.registration_enabled ? (
+        <Button
+          label={mode === 'signIn' ? 'Create an account instead' : 'I already have an account'}
+          variant="secondary"
+          onPress={() => {
+            setMode(mode === 'signIn' ? 'register' : 'signIn');
+            setError(null);
+          }}
+        />
+      ) : null}
 
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Register')}>
-            <Text style={styles.registerLink}>Register</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+      <Text style={[type.small, { textAlign: 'center', marginTop: space.sm }]}>
+        Authentication is handled by Firebase. This app never sees your password.
+      </Text>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f7fb',
-  },
-
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-
-  logo: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#2563eb',
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-  },
-
-  subtitle: {
-    fontSize: 15,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 30,
-  },
-
-  input: {
-    height: 52,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    color: '#111827',
-    marginBottom: 15,
-  },
-
-  loginButton: {
-    height: 52,
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 5,
-  },
-
-  loginButtonText: {
-    color: '#ffffff',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-
-  registerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 25,
-  },
-
-  registerText: {
-    color: '#6b7280',
-    fontSize: 15,
-  },
-
-  registerLink: {
-    color: '#2563eb',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-});
-
-export default LoginScreen;

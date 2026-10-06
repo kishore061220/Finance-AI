@@ -1,5 +1,29 @@
 {
   "extends": "@react-native/typescript-config",
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["**/node_modules", "**/Pods"]
+  "// ": "The React Native app lives at the repository ROOT, so the default '**/*.ts' glob would type-check every sibling project - the web client's jsdom tests, and the backend. Those have their own tsconfigs and their own dependencies, and including them here produces thousands of unrelated errors. The include list below is explicit for that reason.",
+  "include": [
+    "App.tsx",
+    "index.js",
+    "jest.setup.js",
+    "src/**/*",
+    "__tests__/**/*",
+    "__mocks__/**/*",
+    "metro.config.js",
+    "react-native.config.js",
+    "babel.config.js",
+    "jest.config.js",
+    "types/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "android",
+    "ios",
+    "finance-ai-api",
+    "finance-ai-frontend",
+    "finance-ai-ml",
+    "docs",
+    "database",
+    "**/node_modules",
+    "**/Pods"
+  ]
 }

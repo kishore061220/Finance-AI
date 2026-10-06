@@ -1,58 +1,129 @@
-# Root ignores for the whole FinanceAI workspace.
+# Root ignore file for the FinanceAI workspace.
 #
-# Component-level ignores still apply on their own: finance-ai-api/.gitignore,
-# finance-ai-frontend/.gitignore, FinanceAI/.gitignore, finance-ai-ml/.gitignore.
-# This file covers what is shared, plus the traps that live at the root.
+# The React Native app lives at the repository ROOT, so the Android/Xcode/node
+# rules below apply to it directly. The Python and web components each ignore
+# their own internals via finance-ai-api/.gitignore and
+# finance-ai-frontend/.gitignore; the rules here cover what is shared plus the
+# traps that sit at the root.
 
-# Python (a stray venv exists at the root as well as inside the components)
+# ---------------------------------------------------------------------------
+# Secrets and per-machine Firebase configuration
+# ---------------------------------------------------------------------------
+# finance-ai-api/.env currently holds a live DB_PASSWORD in plaintext. Every .env
+# is ignored as a backstop, for whichever component has not been given its own
+# rule. The *.example files are tracked so a fresh checkout knows which keys to
+# supply.
+.env
+.env.*
+!.env.example
+
+# Identifies a real Firebase project and is machine-specific.
+android/app/google-services.json
+android/app/debug/google-services.json
+ios/GoogleService-Info.plist
+
+# ---------------------------------------------------------------------------
+# Python (backend and ML package)
+# ---------------------------------------------------------------------------
+# A venv exists at the root as well as inside finance-ai-api.
 .venv/
 venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
-# Node
-node_modules/
-
-# Secrets.
+# Trained model artifacts.
 #
-# finance-ai-api/.env currently holds a live DB_PASSWORD in plaintext. Ignore
-# every .env here as a backstop for the component that has not been given one.
-.env
-.env.*
-!.env.example
+# *.pkl is a pickle: it is executable when loaded, large, and reproducible from
+# the training data. Train it where it is scored, or export it deliberately with
+# finance_ai_ml.export.export_to_backend.
+ml_artifacts/
+*.pkl
 
-# Editor and OS noise
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-
-# Local database copies.
-#
+# ---------------------------------------------------------------------------
+# Live database copies
+# ---------------------------------------------------------------------------
 # database/backup/finance_ai_backup_pre_migration.json is a real snapshot of the
 # live finance_ai database - 5 users, 9 transactions, 2 budgets. It stays on disk
 # for reference but must not be committed: it is production data, and the backup
-# it came from is only trustworthy because it is not public.
+# is only trustworthy because it is not public.
 database/backup/*.json
 *.sql
 *.dump
 
-# Model artifacts, wherever they are trained.
-#
-# *.pkl is a pickle: it is executable when loaded, large, and reproducible from
-# the training data. finance-ai-ml/.gitignore covers its own directory; this
-# covers the backend's ml_artifacts/ so a locally trained model is not committed.
-ml_artifacts/
-*.pkl
+# ---------------------------------------------------------------------------
+# node.js (root React Native app and the web client)
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log
+yarn-error.log
 
-# Build and tool output
-dist/
-build/
-coverage/
-*.log
-*.apk
-*.aab
-*.ipa
+# Bundles are build output, not source. Metro emits .bundle on iOS.
+*.jsbundle
 .metro-health-check*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# ---------------------------------------------------------------------------
+# Android / IntelliJ
+# ---------------------------------------------------------------------------
+# Covers both android/app/build (the APK) and android/.gradle.
+build/
+.cxx/
+.gradle/
+.kotlin/
+local.properties
+.idea
+*.iml
+*.hprof
+*.keystore
+!debug.keystore
+
+# ---------------------------------------------------------------------------
+# Xcode
+# ---------------------------------------------------------------------------
+*.pbxuser
+!default.pbxuser
+*.mode1v2
+!default.mode1v2
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+**/.xcode.env.local
+
+# ---------------------------------------------------------------------------
+# Ruby / CocoaPods
+# ---------------------------------------------------------------------------
+**/Pods/
+/vendor/bundle/
+
+# fastlane output is regenerated, never committed.
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+
+# ---------------------------------------------------------------------------
+# Coverage, reports and editor noise
+# ---------------------------------------------------------------------------
+/coverage
+dist/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp

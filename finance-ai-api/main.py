@@ -21,7 +21,24 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.core.config import settings
-from app.database.connection import engine
+from app.database.connection import get_engine
+
+
+class _LazyEngine:
+    """Resolves to the real engine on first use.
+
+    Importing this module must not require database credentials, so the engine is
+    not built here. Attribute access is forwarded unchanged, which keeps
+    ``main.engine`` working exactly as before - including for tests that
+    substitute a failing engine to assert that ``/health`` degrades without
+    leaking the connection string.
+    """
+
+    def __getattr__(self, name):
+        return getattr(get_engine(), name)
+
+
+engine = _LazyEngine()
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,

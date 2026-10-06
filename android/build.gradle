@@ -15,6 +15,15 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+
+        /**
+         * Google Services plugin, needed by @react-native-firebase.
+         *
+         * Loaded unconditionally so a missing or malformed
+         * `app/google-services.json` fails with a clear message from the plugin
+         * instead of a "module not found" from the Firebase Gradle plugin.
+         */
+        classpath("com.google.gms:google-services:4.4.4")
     }
 }
 

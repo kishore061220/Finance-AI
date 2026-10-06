@@ -17,21 +17,26 @@ concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: "22"
+
 jobs:
   assemble-debug:
     name: assembleDebug
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: FinanceAI
+    # The React Native app lives at the repository ROOT; only Gradle runs inside
+    # android/. Previously this job set working-directory to a `FinanceAI/`
+    # subdirectory that only ever existed as a stray gitlink, so setup-node
+    # failed on a missing package-lock.json before Gradle was ever reached.
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          # package.json declares "node": ">= 22.11.0".
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: FinanceAI/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - uses: actions/setup-java@v4
         with:
@@ -46,7 +51,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('FinanceAI/android/**/*.gradle') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle') }}
           restore-keys: gradle-${{ runner.os }}-
 
       - run: npm ci
@@ -64,7 +69,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: FinanceAI/android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
 
       # A successful build that packaged an empty entry module once shipped a
