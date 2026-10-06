@@ -52,20 +52,18 @@ def get_database_url() -> str:
         _database_url = build_database_url()
     return _database_url
 
-
 def get_engine():
     """The application engine, created on first use."""
     global _engine
     if _engine is None:
         _engine = create_engine(
             get_database_url(),
-            pool_pre_ping=True,
+            pool_pre_ping=True,     
             pool_recycle=1800,
             echo=settings.db_echo,
             future=True,
         )
     return _engine
-
 
 def get_session_factory():
     """The application session factory, created on first use."""
