@@ -1,0 +1,10 @@
+INFO:     Will watch for changes in these directories: ['C:\\Projects\\Finance-AI\\finance-ai-api']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [2464] using WatchFiles
+INFO:     Started server process [2832]
+INFO:     Waiting for application startup.
+2026-10-07 11:25:37,312 WARNING  finance_ai: Firebase is NOT configured. Every protected endpoint will reject real requests. Set FIREBASE_PROJECT_ID and credentials before serving users.
+2026-10-07 11:25:37,420 INFO     finance_ai: Database connection OK (finance_ai)
+2026-10-07 11:25:37,421 INFO     finance_ai: Finance-AI API 2.0.0 ready (env=development)
+INFO:     Application startup complete.
+2026-10-07 12:32:39,007 WARNING  app.core.security: Authentication provider: DEV token provider. Configure Firebase to enable production authentication.

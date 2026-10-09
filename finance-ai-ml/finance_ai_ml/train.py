@@ -47,6 +47,8 @@ class TrainingResult:
     caveats: List[str] = field(default_factory=list)
     trained_at: Optional[str] = None
     library_versions: Dict[str, str] = field(default_factory=dict)
+    # Per-candidate metrics when the model was chosen by compare_models().
+    comparison: Dict[str, Dict[str, float]] = field(default_factory=dict)
     estimator: object = None
 
     @property

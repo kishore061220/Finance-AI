@@ -18,6 +18,7 @@ Two rules govern everything here:
 
 from __future__ import annotations
 
+from finance_ai_ml.compare import compare_models, export_best
 from finance_ai_ml.config import TrainingConfig
 from finance_ai_ml.dataset import DatasetError, load_transactions
 from finance_ai_ml.export import export_artifact, read_artifact_metadata
@@ -32,7 +33,9 @@ __all__ = [
     "TrainingConfig",
     "TrainingResult",
     "build_feature_frame",
+    "compare_models",
     "export_artifact",
+    "export_best",
     "load_transactions",
     "read_artifact_metadata",
     "train",

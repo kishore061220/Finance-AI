@@ -208,20 +208,24 @@ describe('authenticated access', () => {
   })
 
   it('redirects away from /login once signed in', async () => {
-    mockApi()
+    const seen = mockApi()
     sessionStorage.setItem('finance_ai.dev_token', 'stored-token')
 
     renderApp('/login')
 
-    // "/login" redirects to "/", the dashboard. Asserting on the absence of the
-    // login form is enough here: waiting for a transactions heading would never
-    // resolve, since the redirect does not go there.
-    await waitFor(() => {
-      expect(screen.queryByRole('button', { name: /continue as developer/i })).not.toBeInTheDocument()
-    })
+    // "/login" redirects to "/", the dashboard. Wait for that heading first: it
+    // proves the token was adopted and the redirect ran. Asserting on the
+    // absence of the login form instead would also be true during the loading
+    // spinner, so it would pass without proving anything.
     expect(
       await screen.findByRole('heading', { name: /welcome back/i }, { timeout: LAZY_TIMEOUT }),
     ).toBeInTheDocument()
+
+    // The redirect replaced the login form; it did not merely hide the button.
+    expect(
+      screen.queryByRole('button', { name: /continue as developer/i }),
+    ).not.toBeInTheDocument()
+    expect(seen.some((call) => call.url === '/api/auth/me')).toBe(true)
   })
 
   it('sends the developer sign-in through the backend dev-token endpoint', async () => {

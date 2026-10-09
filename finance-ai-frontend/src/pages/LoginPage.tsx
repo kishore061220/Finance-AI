@@ -195,18 +195,6 @@ export default function LoginPage() {
             </>
           )}
         </Card>
-
-        {config?.app_env === 'development' && !devOnly && (
-          <div className="mt-4 text-center">
-            <button
-              type="button"
-              className="text-xs text-muted hover:text-text hover:underline"
-              onClick={() => setMode('developer')}
-            >
-              Use developer sign-in
-            </button>
-          </div>
-        )}
       </div>
     </div>
   )

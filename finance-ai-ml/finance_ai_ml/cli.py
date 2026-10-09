@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from finance_ai_ml.compare import ComparisonError, compare_models, export_best
 from finance_ai_ml.config import TrainingConfig
 from finance_ai_ml.dataset import DatasetError, load_transactions, summarise
 from finance_ai_ml.export import (
@@ -106,6 +107,73 @@ def cmd_publish(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_compare(args: argparse.Namespace) -> int:
+    try:
+        frame = load_transactions(args.dataset, args.label_column)
+    except DatasetError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+
+    result = compare_models(frame, _config(args), split=args.split)
+    if result.status != "compared":
+        print(result.message, file=sys.stderr)
+        print(json.dumps(result.as_dict(), indent=2), file=sys.stderr)
+        return EXIT_REFUSED
+
+    header = (
+        f"{'model':<34}{'roc_auc':>9}{'pr_auc':>9}{'prec':>9}"
+        f"{'recall':>9}{'f1':>9}{'fp':>8}"
+    )
+    print(header)
+    print("-" * len(header))
+    for candidate in result.candidates:
+        if not candidate.metrics:
+            print(f"{candidate.name:<34}  failed: {candidate.error}")
+            continue
+        m = candidate.metrics
+        print(
+            f"{candidate.name:<34}{m['roc_auc']:>9.4f}{m['average_precision']:>9.4f}"
+            f"{m['precision']:>9.4f}{m['recall']:>9.4f}{m['f1']:>9.4f}"
+            f"{int(m['false_positives']):>8d}"
+        )
+
+    print(f"\nSelected: {result.best} (by {result.selection_metric})")
+    print(result.message)
+    for note in result.caveats:
+        print(f"  ! {note}")
+
+    if args.output:
+        model_path, meta_path = export_best(result, Path(args.output))
+        print(f"\nWrote {model_path}")
+        print(f"Wrote {meta_path}")
+    if args.backend:
+        best = result.best_candidate
+        from finance_ai_ml.export import export_to_backend
+        from finance_ai_ml.train import TrainingResult
+
+        adapter = TrainingResult(
+            status="trained",
+            model=best.name,
+            rows_used=result.train_rows + result.test_rows,
+            train_rows=result.train_rows,
+            test_rows=result.test_rows,
+            positives=result.positives,
+            test_positives=result.test_positives,
+            metrics=best.metrics,
+            feature_names=list(result.feature_names),
+            message=result.message,
+            caveats=result.caveats,
+            comparison={c.name: c.metrics for c in result.candidates},
+            estimator=best.estimator,
+        )
+        path = export_to_backend(adapter, Path(args.backend))
+        print(f"\nPublished {path}")
+
+    print("\nComparison JSON:")
+    print(json.dumps(result.as_dict(), indent=2, default=str))
+    return EXIT_OK
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     try:
         metadata = read_artifact_metadata(Path(args.directory))
@@ -158,6 +226,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     publish_parser.set_defaults(func=cmd_publish)
 
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Fit and compare several models, then export the best",
+    )
+    add_common(compare_parser)
+    compare_parser.add_argument(
+        "--output", default=None, help="Directory to write the winning artifact"
+    )
+    compare_parser.add_argument(
+        "--backend", default=None, help="Path to finance-ai-api to publish into"
+    )
+    compare_parser.add_argument(
+        "--split",
+        choices=["stratified", "chronological"],
+        default="stratified",
+        help="Hold-out strategy; chronological is stricter for time-ordered fraud",
+    )
+    compare_parser.set_defaults(func=cmd_compare)
+
     verify_parser = subparsers.add_parser(
         "verify", help="Validate an existing artifact's integrity"
     )
@@ -176,6 +263,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_BAD_INPUT
     except ArtifactError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+    except ComparisonError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_BAD_INPUT
 

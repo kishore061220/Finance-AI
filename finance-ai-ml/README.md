@@ -36,9 +36,18 @@ python -m finance_ai_ml train sample_data/transactions.csv --output ./artifacts
 # Train and write straight into the backend's artifact directory.
 python -m finance_ai_ml publish sample_data/transactions.csv --backend ../finance-ai-api
 
+# Fit and compare several models, then export the winner. `--split chronological`
+# scores oldest->newest, the stricter estimate for time-ordered fraud.
+python -m finance_ai_ml compare sample_data/transactions.csv --split stratified \
+    --backend ../finance-ai-api
+
 # Re-check an existing artifact's checksum and print its metadata.
 python -m finance_ai_ml verify ../finance-ai-api/ml_artifacts
 ```
+
+The dataset actually used, the mapping, the per-model metrics and the honest
+limitations are recorded in [DATASET.md](DATASET.md). The acquisition script
+lives at `scripts/prepare_ulb_creditcard.py`.
 
 Thresholds are overridable with `--min-rows`, `--min-positives`, and `--test-size`. Lower them only when a smaller dataset is genuinely the right call, and only knowing the reported metrics become less trustworthy.
 

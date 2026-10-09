@@ -16,6 +16,7 @@ from app.models.budget import Budget
 from app.models.transaction import Transaction
 from app.services.prediction import (
     MIN_MONTHS_FOR_TREND,
+    backtest_forecast,
     build_prediction_report,
     category_forecasts,
     forecast_next_month,
@@ -316,6 +317,73 @@ class TestForecast:
         assert body["prediction"]["predicted_expense"]
         assert body["prediction"]["range"]["low"] <= body["prediction"]["range"]["high"]
         assert body["available_months"] == 3
+
+
+class TestBacktest:
+    """The forecast must be scored, not just produced.
+
+    These prove the walk-forward loop reports honest error metrics against the
+    baselines and refuses to score when there is nothing to hold out.
+    """
+
+    def test_needs_more_than_the_training_window(self, db, user_id):
+        seed_months(db, user_id, [100.00, 200.00, 300.00])
+        transactions = (
+            db.query(Transaction).filter(Transaction.user_id == user_id).all()
+        )
+        result = backtest_forecast(transactions)
+
+        assert result["status"] == "insufficient_data"
+        assert result["metrics"] == {}
+        assert result["best_method"] is None
+        assert result["evaluation_points"] == 0
+
+    def test_scores_every_method_and_finds_the_best(self, db, user_id):
+        # A perfectly linear series: the trend should beat mean and naive.
+        seed_months(db, user_id, [1000.00, 1100.00, 1200.00, 1300.00])
+        transactions = (
+            db.query(Transaction).filter(Transaction.user_id == user_id).all()
+        )
+        result = backtest_forecast(transactions)
+
+        assert result["status"] == "evaluated"
+        assert result["evaluation_points"] == 1
+        metrics = result["metrics"]
+        for method in ("linear_trend", "mean", "naive"):
+            assert set(metrics[method]) == {"mae", "rmse", "n"}
+            assert metrics[method]["mae"] >= 0
+            assert metrics[method]["rmse"] >= metrics[method]["mae"]
+        assert metrics["linear_trend"]["mae"] == 0
+        assert result["best_method"] == "linear_trend"
+
+    def test_seasonal_baseline_absent_without_a_year(self, db, user_id):
+        seed_months(db, user_id, [100.00, 200.00, 300.00, 400.00])
+        transactions = (
+            db.query(Transaction).filter(Transaction.user_id == user_id).all()
+        )
+        metrics = backtest_forecast(transactions)["metrics"]
+        # Fewer than 13 months of data means no same-month-last-year comparison.
+        assert "seasonal_naive" not in metrics
+
+    def test_metrics_stay_within_the_data(self, db, user_id):
+        """A leak-free backtest can be wrong, but never reports negative error."""
+        seed_months(db, user_id, [500.00, 5000.00, 200.00, 6000.00, 300.00, 700.00])
+        transactions = (
+            db.query(Transaction).filter(Transaction.user_id == user_id).all()
+        )
+        result = backtest_forecast(transactions)
+        for metrics in result["metrics"].values():
+            assert metrics["mae"] >= 0
+            assert metrics["rmse"] >= 0
+
+    def test_report_carries_the_backtest(self, db, user_id):
+        seed_months(db, user_id, [1000.00, 1100.00, 1200.00, 1300.00])
+        transactions = (
+            db.query(Transaction).filter(Transaction.user_id == user_id).all()
+        )
+        report = build_prediction_report(transactions)
+        assert report["status"] == "predicted"
+        assert report["backtest"]["status"] == "evaluated"
 
 
 class TestCategoryForecasts:

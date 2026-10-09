@@ -134,6 +134,26 @@ def _linear_trend(history: Sequence[MonthSpend]) -> tuple:
     return slope, mean_y - slope * mean_x
 
 
+def _forecast_from_history(history: Sequence[MonthSpend]) -> tuple:
+    """The point forecast for the next month, plus whether it fell back to the mean.
+
+    Returns ``(predicted, used_fallback)``. The single place the trend is turned
+    into a number, shared by the live forecast and the backtest so the two can
+    never drift apart.
+    """
+    amounts = [m.amount for m in history]
+    average = sum(amounts) / Decimal(len(amounts))
+    slope, intercept = _linear_trend(history)
+    raw = intercept + slope * len(history)
+
+    # A trend that turns negative (or near-zero) means the user's spend is
+    # decaying to nothing. That is a projection artefact, not a forecast, so
+    # fall back to the observed average and say so.
+    if raw <= 0:
+        return average, True
+    return Decimal(str(raw)), False
+
+
 def forecast_next_month(
     transactions: Sequence,
     year: Optional[int] = None,
@@ -152,22 +172,14 @@ def forecast_next_month(
     amounts = [m.amount for m in history]
     average = sum(amounts) / Decimal(len(amounts))
 
-    slope, intercept = _linear_trend(history)
-    raw = intercept + slope * len(history)
+    predicted, used_fallback = _forecast_from_history(history)
 
     notes: List[str] = []
-
-    # A trend that turns negative (or near-zero) means the user's spend is
-    # decaying to nothing. That is a projection artefact, not a forecast, so
-    # fall back to the observed average and say so.
-    if raw <= 0:
-        predicted = average
+    if used_fallback:
         notes.append(
             "The trend in your history points to zero or below, which is not a "
             "meaningful projection. The forecast uses your average month instead."
         )
-    else:
-        predicted = Decimal(str(raw))
 
     # Spread from the real dispersion of the history, never from the point
     # estimate, so a user with a steady pattern gets a tight range and a user
@@ -206,6 +218,89 @@ def forecast_next_month(
         basis="linear-trend-over-monthly-expense",
         notes=notes,
     )
+
+
+def backtest_forecast(
+    transactions: Sequence,
+    min_train: int = MIN_MONTHS_FOR_TREND,
+) -> Dict:
+    """Walk-forward evaluation of the forecast against simple baselines.
+
+    Each step trains on the months strictly *before* the one being predicted, so
+    no future data reaches a prediction - the same discipline the live forecast
+    uses. MAE and RMSE are then reported per method (in currency units) so the
+    trend projection can be judged against a running mean and a naive
+    last-value carry-forward on the user's own history, instead of being assumed
+    to be the best. A seasonal-naive baseline (same month last year) is scored
+    only when a year of history exists to support it.
+
+    This is the honest answer to "is the model any good?" for a per-user series:
+    the dataset is the user's own months, and the comparison is against the
+    baselines a reasonable person would use instead.
+    """
+    history = monthly_expense_history(transactions)
+    if len(history) <= min_train:
+        return {
+            "status": "insufficient_data",
+            "message": (
+                f"A backtest needs more than {min_train} months of history to "
+                "hold months out and score the forecast."
+            ),
+            "months_of_history": len(history),
+            "evaluation_points": 0,
+            "horizon_months": 1,
+            "method": "walk-forward, one month ahead",
+            "metrics": {},
+            "best_method": None,
+        }
+
+    errors: Dict[str, List[float]] = {
+        "linear_trend": [],
+        "mean": [],
+        "naive": [],
+        "seasonal_naive": [],
+    }
+    amount_by_month = {(m.year, m.month): float(m.amount) for m in history}
+
+    for index in range(min_train, len(history)):
+        train = history[:index]
+        target = history[index]
+        actual = float(target.amount)
+        train_amounts = [float(m.amount) for m in train]
+
+        linear, _ = _forecast_from_history(train)
+        errors["linear_trend"].append(abs(actual - float(linear)))
+        errors["mean"].append(abs(actual - sum(train_amounts) / len(train_amounts)))
+        errors["naive"].append(abs(actual - train_amounts[-1]))
+
+        last_year = amount_by_month.get((target.year - 1, target.month))
+        if last_year is not None:
+            errors["seasonal_naive"].append(abs(actual - last_year))
+
+    metrics: Dict[str, Dict] = {}
+    for method, absolute_errors in errors.items():
+        count = len(absolute_errors)
+        if count == 0:
+            continue
+        mae = sum(absolute_errors) / count
+        rmse = (sum(e * e for e in absolute_errors) / count) ** 0.5
+        metrics[method] = {"mae": round(mae, 2), "rmse": round(rmse, 2), "n": count}
+
+    best_method = min(metrics, key=lambda name: metrics[name]["mae"]) if metrics else None
+    return {
+        "status": "evaluated",
+        "message": (
+            "Walk-forward error on your own monthly history. The trend forecast "
+            "is scored against a running mean and a naive last-month carry-forward; "
+            "lower MAE is better."
+        ),
+        "months_of_history": len(history),
+        "evaluation_points": len(history) - min_train,
+        "horizon_months": 1,
+        "method": "walk-forward, one month ahead",
+        "metrics": metrics,
+        "best_method": best_method,
+    }
 
 
 def category_forecasts(
@@ -315,6 +410,7 @@ def build_prediction_report(
     # withheld alongside the trend forecast.
     categories = category_forecasts(transactions, history)
     projections = budget_projection(transactions, budgets)
+    backtest = backtest_forecast(transactions)
     observed_average = (
         money(sum(m.amount for m in history) / Decimal(len(history))) if history else None
     )
@@ -339,6 +435,7 @@ def build_prediction_report(
             ],
             "categories": categories,
             "budget_projection": projections,
+            "backtest": backtest,
         }
 
     return {
@@ -355,4 +452,5 @@ def build_prediction_report(
         "history": [{"label": m.label, "expense": money(m.amount)} for m in history],
         "categories": categories,
         "budget_projection": projections,
+        "backtest": backtest,
     }
