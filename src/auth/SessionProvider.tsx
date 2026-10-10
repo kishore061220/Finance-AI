@@ -7,15 +7,16 @@
  * configuration talking to a server without it would otherwise present email and
  * Google buttons that always fail.
  *
- * Token handling:
- *  - Firebase manages its own credential and persists it in the platform's secure
- *    storage. The ID token is held in memory and attached per request.
- *  - The development token is persisted in AsyncStorage. It is a real bearer
- *    credential, but it only ever exists against a backend with Firebase off and
- *    `ALLOW_DEV_AUTH=true`, which cannot be true in production.
+ * Token handling is Firebase's. The SDK persists its own credential in the
+ * platform's secure storage and renews the ID token before it expires.
+ * `onIdTokenChanged` (not `onAuthStateChanged`) fires for both sign-in/sign-out
+ * and those silent refreshes, so the provider re-adopts the current token and
+ * every request carries a live credential. The ID token is held in memory and
+ * attached per request. There is no development-token fallback: this client
+ * authenticates only against Firebase.
  *
- * Neither path ever sends a user id: the backend derives ownership from the
- * token on every request.
+ * No path ever sends a user id: the backend derives ownership from the token on
+ * every request.
  */
 
 import React, {
@@ -28,23 +29,34 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { ApiError, configureAuth, request, setToken } from '../services/api';
+import { ApiError, configureAuth, setToken } from '../services/api';
 import { authApi } from '../services/endpoints';
-import { firebaseAuth, isFirebaseAvailable } from '../services/firebase';
-import { DEV_TOKEN_KEY } from '../config';
-import type { AuthConfig, DevTokenResponse, UserResponse } from '../types';
+import { firebaseAuth, firebaseProjectId, isFirebaseAvailable } from '../services/firebase';
+import type { AuthConfig, UserResponse } from '../types';
 
 export type SessionStatus = 'loading' | 'authenticated' | 'anonymous';
+
+/**
+ * Why a Firebase build cannot show working sign-in forms even though the server
+ * says it is on Firebase.
+ *
+ * - `null`            – nothing wrong, or the server is not on Firebase.
+ * - `'unconfigured'`  – the server verifies Firebase tokens but this build has no
+ *                       `google-services.json`, so it cannot mint one.
+ * - `'mismatch'`      – this build points at a different Firebase project than
+ *                       the backend verifies. Sign-in would succeed and then be
+ *                       rejected on the first API call.
+ */
+export type FirebaseProjectIssue = 'unconfigured' | 'mismatch' | null;
 
 export interface SessionState {
   status: SessionStatus;
   user: UserResponse | null;
   config: AuthConfig | null;
+  firebaseProjectIssue: FirebaseProjectIssue;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
-  signInAsDeveloper: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -121,9 +133,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // specifier, and Jest cannot execute a dynamic import without an opt-in VM
         // flag. `firebaseAuth()` returning non-null already proves the module
         // loaded, so this cannot throw here.
-        const { onAuthStateChanged } = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
+        const { onIdTokenChanged } = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
         if (cancelled) return;
-        unsubscribeFirebase = onAuthStateChanged(auth, async (firebaseUser) => {
+        unsubscribeFirebase = onIdTokenChanged(auth, async (firebaseUser) => {
           if (cancelled) return;
           if (!firebaseUser) {
             signOutLocal();
@@ -139,17 +151,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      try {
-        const stored = await AsyncStorage.getItem(DEV_TOKEN_KEY);
-        if (cancelled) return;
-        if (stored) {
-          await adoptToken(stored);
-          return;
-        }
-      } catch {
-        // Unreadable storage is not fatal: the user just signs in again.
-      }
-
+      // No Firebase configuration in this build and no other provider: the
+      // server decides what the login screen may offer.
       if (!cancelled) setStatus('anonymous');
     })();
 
@@ -190,27 +193,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [adoptToken],
   );
 
-  const signInAsDeveloper = useCallback(
-    async (email: string) => {
-      const response = await request<DevTokenResponse>(
-        {
-          method: 'POST',
-          url: '/api/auth/dev-token',
-          data: {
-            subject: `dev-${email}`,
-            email,
-            name: 'Developer',
-            expires_minutes: 480,
-          },
-        },
-        { skipAuth: true },
-      );
-      await AsyncStorage.setItem(DEV_TOKEN_KEY, response.access_token);
-      await adoptToken(response.access_token);
-    },
-    [adoptToken],
-  );
-
   /**
    * End the session.
    *
@@ -235,24 +217,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    await AsyncStorage.removeItem(DEV_TOKEN_KEY).catch(() => {
-      // Non-fatal: the token is already unusable in memory, and a stale entry is
-      // rejected on next launch.
-    });
     signOutLocal();
   }, [signOutLocal]);
+
+  /**
+   * Detect a build that cannot authenticate against this server even though the
+   * server believes it is on Firebase.
+   */
+  const firebaseProjectIssue = useMemo<FirebaseProjectIssue>(() => {
+    if (!config?.firebase_enabled) return null;
+    const buildProjectId = firebaseProjectId();
+    if (!buildProjectId) return 'unconfigured';
+    if (config.project_id && buildProjectId !== config.project_id) return 'mismatch';
+    return null;
+  }, [config]);
 
   const value = useMemo<SessionState>(
     () => ({
       status,
       user,
       config,
+      firebaseProjectIssue,
       signInWithEmail,
       signUp,
-      signInAsDeveloper,
       signOut,
     }),
-    [status, user, config, signInWithEmail, signUp, signInAsDeveloper, signOut],
+    [status, user, config, firebaseProjectIssue, signInWithEmail, signUp, signOut],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

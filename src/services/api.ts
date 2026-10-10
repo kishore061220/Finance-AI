@@ -115,11 +115,18 @@ export interface RequestOptions {
   /**
    * Send without an `Authorization` header.
    *
-   * Needed for `/api/auth/config` and `/api/auth/dev-token`, which run before a
-   * session exists. Attaching a stale token to those invites a 401 that would
-   * be misread as an expired session.
+   * Needed for `/api/auth/config`, which runs before a session exists. Attaching
+   * a stale token to it invites a 401 that would be misread as an expired
+   * session.
    */
   skipAuth?: boolean;
+  /**
+   * Override how the response body is parsed.
+   *
+   * Report generation streams a binary file, so it asks for an `arraybuffer`
+   * rather than letting axios assume JSON and choke on the first byte.
+   */
+  responseType?: AxiosRequestConfig['responseType'];
 }
 
 export const api: AxiosInstance = axios.create({
@@ -210,6 +217,7 @@ export async function request<T>(
 ): Promise<T> {
   const response = await api.request<T>({
     ...config,
+    responseType: options.responseType ?? config.responseType,
     skipAuth: options.skipAuth,
   } as AxiosRequestConfig & { skipAuth?: boolean });
   return response.data;

@@ -26,6 +26,9 @@ const TransactionsPage = lazy(async () => import('@/pages/TransactionsPage'))
 const BudgetsPage = lazy(async () => import('@/pages/BudgetsPage'))
 const FraudPage = lazy(async () => import('@/pages/FraudPage'))
 const LoansPage = lazy(async () => import('@/pages/LoansPage'))
+const ReportsPage = lazy(async () => import('@/pages/ReportsPage'))
+const FamilyPage = lazy(async () => import('@/pages/FamilyPage'))
+const AssistantPage = lazy(async () => import('@/pages/AssistantPage'))
 const ProfilePage = lazy(async () => import('@/pages/ProfilePage'))
 const SettingsPage = lazy(async () => import('@/pages/SettingsPage'))
 const LoginPage = lazy(async () => import('@/pages/LoginPage'))
@@ -61,6 +64,9 @@ export default function App() {
           <Route path="budgets" element={<BudgetsPage />} />
           <Route path="fraud" element={<FraudPage />} />
           <Route path="loans" element={<LoansPage />} />
+          <Route path="reports" element={<ReportsPage />} />
+          <Route path="family" element={<FamilyPage />} />
+          <Route path="assistant" element={<AssistantPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

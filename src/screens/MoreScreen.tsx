@@ -57,6 +57,27 @@ export default function MoreScreen() {
         />
       </Card>
 
+      <SectionTitle>Analysis</SectionTitle>
+      <Card>
+        <NavRow
+          label="Reports"
+          detail="Generate statements and see what was produced"
+          onPress={go('Reports')}
+        />
+        <View style={styles.separator} />
+        <NavRow
+          label="Family"
+          detail="Household groups, members and invitations"
+          onPress={go('Family')}
+        />
+        <View style={styles.separator} />
+        <NavRow
+          label="Assistant"
+          detail="Ask questions about your money"
+          onPress={go('Assistant')}
+        />
+      </Card>
+
       <SectionTitle>Account</SectionTitle>
       <Card>
         <NavRow label="Notifications" onPress={go('Notifications')} />

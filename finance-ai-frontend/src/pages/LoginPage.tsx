@@ -3,9 +3,14 @@
  *
  * Which form is shown depends on what the server says it supports
  * (`GET /api/auth/config`), not on what the bundle happens to have configured.
- * When Firebase is not configured in the build but the backend reports dev auth,
- * the developer sign-in form appears; when the backend reports Firebase, the
- * email/Google forms appear regardless.
+ * The only authentication path this client offers is Firebase:
+ *
+ *  - server on Firebase  -> email/Google forms, plus a warning when this build
+ *    points at a different project or has no `VITE_FIREBASE_*` variables.
+ *  - server unreachable  -> the forms can only appear when the build itself has
+ *    Firebase configured; otherwise an explanatory notice is shown.
+ *  - server on dev/unconfigured auth -> an explanatory notice. Nothing is
+ *    offered that cannot succeed.
  */
 
 import { useState, type FormEvent } from 'react'
@@ -14,10 +19,17 @@ import { Navigate } from 'react-router-dom'
 import { useSession, isFirebaseConfigured } from '@/auth/SessionContext'
 import { Alert, Button, Card, Field, TextInput } from '@/components/ui'
 
-type Mode = 'signin' | 'signup' | 'developer'
+type Mode = 'signin' | 'signup'
 
 export default function LoginPage() {
-  const { status, config, signInWithEmail, signUp, signInWithGoogle, signInAsDeveloper } = useSession()
+  const {
+    status,
+    config,
+    firebaseProjectIssue,
+    signInWithEmail,
+    signUp,
+    signInWithGoogle,
+  } = useSession()
 
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
@@ -27,23 +39,16 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
 
   /**
-   * The backend's own view of the provider wins over the build's.
+   * Only offer forms that can actually succeed.
    *
-   * A build with Firebase variables pointing at a real project, talking to a
-   * server that has Firebase disabled, would otherwise show forms that cannot
-   * possibly work.
+   * The server's word is authoritative. When it answers, its provider decides;
+   * when it is unreachable, forms are only shown if this build is Firebase-ready
+   * (the connection may simply be down, and the attempt will say so).
    */
-  const serverSaysFirebase = config?.firebase_enabled ?? isFirebaseConfigured()
-  const devOnly = config?.provider === 'dev' || (!serverSaysFirebase && config !== null)
-
-  /**
-   * The tab actually shown, derived rather than synchronised.
-   *
-   * An effect would need a second render pass to reach the same result, and in
-   * between the email form would briefly render on a server that only accepts
-   * the developer token - forms the user cannot submit.
-   */
-  const activeMode = devOnly && mode === 'signin' ? 'developer' : mode
+  const buildFirebase = isFirebaseConfigured()
+  const serverSaysFirebase = config?.firebase_enabled ?? false
+  const decisionKnown = config !== null
+  const canOfferForms = serverSaysFirebase || (buildFirebase && !decisionKnown)
 
   if (status === 'authenticated') {
     return <Navigate to="/" replace />
@@ -54,12 +59,10 @@ export default function LoginPage() {
     setBusy(true)
     setError(null)
     try {
-      if (activeMode === 'signin') {
+      if (mode === 'signin') {
         await signInWithEmail(email, password)
-      } else if (activeMode === 'signup') {
-        await signUp(email, password, name)
       } else {
-        await signInAsDeveloper(email)
+        await signUp(email, password, name)
       }
     } catch (cause: unknown) {
       setError(
@@ -82,6 +85,35 @@ export default function LoginPage() {
     }
   }
 
+  const renderSetupNotice = () => (
+    <Alert tone="warning">
+      This server has no Firebase Authentication provider available to this
+      client. No sign-in form can succeed against it. Configure the backend with
+      Firebase credentials and build this app with <code>VITE_FIREBASE_*</code>{' '}
+      variables pointing at the same Firebase project.
+    </Alert>
+  )
+
+  const renderProjectIssue = () => {
+    if (!firebaseProjectIssue) return null
+    if (firebaseProjectIssue === 'unconfigured') {
+      return (
+        <Alert tone="error">
+          This build has no <code>VITE_FIREBASE_*</code> configuration, so it
+          cannot obtain an ID token for the Firebase server. Set the Firebase
+          build variables and rebuild.
+        </Alert>
+      )
+    }
+    return (
+      <Alert tone="error">
+        This app is built to authenticate against one Firebase project, but the
+        server verifies a different one. Sign-in would succeed and then be
+        rejected. Rebuild the app with the project the server uses.
+      </Alert>
+    )
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10">
       <div className="w-full max-w-md">
@@ -99,32 +131,14 @@ export default function LoginPage() {
             </div>
           )}
 
-          {devOnly ? (
-            <form onSubmit={submit} className="space-y-4">
-              <Alert tone="warning">
-                This server is running with development authentication. Configure Firebase before
-                deploying.
-              </Alert>
-
-              <Field label="Email" htmlFor="dev-email" hint="Any email works on a dev server.">
-                <TextInput
-                  id="dev-email"
-                  type="email"
-                  autoComplete="username"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                />
-              </Field>
-
-              <Button type="submit" loading={busy} className="w-full">
-                Continue as developer
-              </Button>
-            </form>
+          {!canOfferForms ? (
+            renderSetupNotice()
           ) : (
             <>
+              {renderProjectIssue()}
+
               <form onSubmit={submit} className="space-y-4">
-                {activeMode === 'signup' && (
+                {mode === 'signup' && (
                   <Field label="Full name" htmlFor="name">
                     <TextInput
                       id="name"
@@ -153,16 +167,16 @@ export default function LoginPage() {
                     type="password"
                     // `current-password` on sign-in tells password managers which
                     // credential to offer, instead of generating a new one.
-                    autoComplete={activeMode === 'signup' ? 'new-password' : 'current-password'}
+                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    minLength={activeMode === 'signup' ? 6 : undefined}
+                    minLength={mode === 'signup' ? 6 : undefined}
                     required
                   />
                 </Field>
 
                 <Button type="submit" loading={busy} className="w-full">
-                  {activeMode === 'signup' ? 'Create account' : 'Sign in'}
+                  {mode === 'signup' ? 'Create account' : 'Sign in'}
                 </Button>
               </form>
 
@@ -183,13 +197,13 @@ export default function LoginPage() {
               </Button>
 
               <p className="mt-5 text-center text-sm text-muted">
-                {activeMode === 'signup' ? 'Already have an account?' : 'No account yet?'}{' '}
+                {mode === 'signup' ? 'Already have an account?' : 'No account yet?'}{' '}
                 <button
                   type="button"
                   className="text-accent hover:underline"
-                  onClick={() => setMode(activeMode === 'signup' ? 'signin' : 'signup')}
+                  onClick={() => setMode(mode === 'signup' ? 'signin' : 'signup')}
                 >
-                  {activeMode === 'signup' ? 'Sign in' : 'Create one'}
+                  {mode === 'signup' ? 'Sign in' : 'Create one'}
                 </button>
               </p>
             </>

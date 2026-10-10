@@ -167,11 +167,4 @@ describe('auth config', () => {
 
     expect(captured[0].url).toBe('/api/auth/config');
   });
-
-  it('mints a dev token for a subject derived from the email', async () => {
-    await authApi.devToken('dev@example.com');
-
-    expect(captured[0].url).toBe('/api/auth/dev-token');
-    expect(body()).toMatchObject({ subject: 'dev-dev@example.com' });
-  });
 });

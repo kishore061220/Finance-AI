@@ -21,8 +21,8 @@ if (googleServicesFile.exists()) {
 } else {
     logger.info(
         "google-services.json not found - Firebase Auth and push messaging are " +
-        "disabled for this build. The app will use the backend development-token " +
-        "sign-in path instead."
+        "disabled for this build. The app cannot sign in without Firebase; see the " +
+        "README for how to enable Firebase."
     )
 }
 

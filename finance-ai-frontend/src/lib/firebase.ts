@@ -3,15 +3,13 @@
  *
  * Kept in its own module so the rest of the app never imports the SDK at module
  * scope. The functions here are async because `firebase/auth` is behind a dynamic
- * import: it is ~120kB gzipped, and on a development server using dev-token auth
- * it is never needed at all. A static import would put it in the entry chunk
- * that every visitor downloads before the login form appears.
+ * import: it is ~120kB gzipped and only needed once the user reaches sign-in. A
+ * static import would put it in the entry chunk that every visitor downloads
+ * before the login form appears.
  *
  * Configuration comes from `VITE_FIREBASE_*` build-time variables. If they are
- * missing, `isFirebaseConfigured()` is false and the app falls back to the
- * development token endpoint - which the backend itself only enables when
- * Firebase is off and `ALLOW_DEV_AUTH=true`, so the fallback cannot become a
- * production authentication path.
+ * missing, `isFirebaseConfigured()` is false and the login screen can only
+ * explain that Firebase needs to be set up - this client has no other provider.
  */
 
 export interface FirebaseSettings {
@@ -48,6 +46,18 @@ function readSettings(): FirebaseSettings | null {
  */
 export function isFirebaseConfigured(): boolean {
   return readSettings() !== null
+}
+
+/**
+ * The project id this build authenticates against, or null when unconfigured.
+ *
+ * Exposed so the session layer can compare it with the project the backend says
+ * it verifies (a build pointed at the wrong project fails every API call with a
+ * 401 even though sign-in itself succeeds).
+ */
+export function firebaseProjectId(): string | null {
+  const settings = readSettings()
+  return settings ? settings.projectId : null
 }
 
 /** Names of the variables still missing, for a clearer setup error. */

@@ -4,7 +4,7 @@
  * Models the shape the real module has when `google-services.json` is absent: the
  * import succeeds (so `isFirebaseAvailable()` reports true) but `apps` is empty, so
  * there is no app to authenticate against. That is the state a fresh clone is in,
- * and the fallback to the development-token path depends on it.
+ * and the login screen must show a notice rather than a form that cannot succeed.
  *
  * Set `__setFirebaseConfigured(true)` to model a build that has the credentials
  * file, which is how the Firebase branch is tested without a real project.

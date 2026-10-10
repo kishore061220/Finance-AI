@@ -33,6 +33,12 @@ export interface AuthConfig {
    */
   registration_enabled: boolean;
   app_env: string;
+  /**
+   * The Firebase project id the server verifies tokens for, when it is on
+   * Firebase. The client compares it against its own configured project so a
+   * mismatched build can warn before a sign-in succeeds and then 401s.
+   */
+  project_id?: string | null;
 }
 
 export interface DevTokenResponse {
@@ -595,4 +601,87 @@ export interface BackupListResponse {
   provider: string | null;
   configured: boolean;
   message: string;
+}
+
+// ---------------------------------------------------------------- reports
+
+export interface ReportRequest {
+  report_type: string;
+  report_format: string;
+  period_start?: string;
+  period_end?: string;
+  category?: string;
+}
+
+export interface ReportRecord {
+  id: number;
+  report_type: string;
+  report_format: string;
+  period_start: string | null;
+  period_end: string | null;
+  category: string | null;
+  row_count: number | null;
+  file_size_bytes: number | null;
+  created_at: string | null;
+}
+
+export interface ReportTypes {
+  report_types: string[];
+  report_formats: string[];
+}
+
+
+// ---------------------------------------------------------------- assistant
+
+export interface AssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AssistantRequest {
+  message: string;
+  history?: AssistantMessage[];
+  include_context?: boolean;
+}
+
+export interface AssistantResponse {
+  reply: string;
+  provider: string;
+  model: string | null;
+  context_used: string[];
+  suggestions: string[];
+  fallback: boolean;
+}
+
+export interface AssistantConfig {
+  provider: string;
+  model: string | null;
+  remote_configured: boolean;
+  message: string;
+  suggestions: string[];
+}
+
+
+// ---------------------------------------------------------------- family
+
+export interface FamilyGroup {
+  id: number;
+  name: string;
+  owner_id: number;
+  description: string | null;
+  is_active: boolean;
+  member_count: number;
+  created_at: string | null;
+}
+
+export interface FamilyMember {
+  id: number;
+  family_id: number;
+  user_id: number | null;
+  invited_email: string | null;
+  name: string | null;
+  role: string;
+  status: string;
+  can_view_all: boolean;
+  joined_at: string | null;
 }

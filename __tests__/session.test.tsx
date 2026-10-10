@@ -1,9 +1,10 @@
 /**
  * Session provider behaviour.
  *
- * The paths that matter are the ones a user hits when something is misconfigured:
- * a build with no Firebase credentials falling back to a development token, a stored
- * token that the server rejects, and a provider that is neither.
+ * The only authentication path is Firebase. The paths that matter are the ones a
+ * user hits when something is misconfigured: a build with no Firebase
+ * credentials, a token the server rejects, a provider that is neither, and a
+ * build pointed at a different Firebase project than the server verifies.
  */
 
 import React from 'react';
@@ -11,8 +12,6 @@ import ReactTestRenderer, { act } from 'react-test-renderer';
 
 import { SessionProvider, useSession } from '../src/auth/SessionProvider';
 import { resetFirebaseCache } from '../src/services/firebase';
-import { DEV_TOKEN_KEY } from '../src/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi } from '../src/services/endpoints';
 
 jest.mock('../src/services/endpoints', () => ({
@@ -22,7 +21,6 @@ jest.mock('../src/services/endpoints', () => ({
     logout: jest.fn(),
     profile: jest.fn(),
     updateProfile: jest.fn(),
-    devToken: jest.fn(),
   },
 }));
 
@@ -56,11 +54,11 @@ const USER = {
   last_login_at: null,
 };
 
-type Probe = { status: string; userEmail: string | null };
+type Probe = { status: string; userEmail: string | null; projectIssue: string | null };
 
 function Probe_({ onState }: { onState: (state: Probe) => void }) {
-  const { status, user } = useSession();
-  onState({ status, userEmail: user?.email ?? null });
+  const { status, user, firebaseProjectIssue } = useSession();
+  onState({ status, userEmail: user?.email ?? null, projectIssue: firebaseProjectIssue });
   return null;
 }
 
@@ -84,7 +82,6 @@ beforeEach(async () => {
   firebaseApp.__setFirebaseConfigured(false);
   firebaseAuthModule.__reset();
   jest.clearAllMocks();
-  await AsyncStorage.clear();
   (authApi.config as jest.Mock).mockResolvedValue({
     provider: 'dev',
     firebase_enabled: false,
@@ -96,34 +93,17 @@ beforeEach(async () => {
 });
 
 describe('with no Firebase credentials in the build', () => {
-  it('restores a stored development token', async () => {
-    await AsyncStorage.setItem(DEV_TOKEN_KEY, 'stored-token');
+  it('reports anonymous when there is no Firebase user', async () => {
     const states: Probe[] = [];
 
     await mount((state) => states.push(state));
 
-    expect(states.at(-1)).toEqual({ status: 'authenticated', userEmail: 'dev@example.com' });
-  });
-
-  it('reports anonymous when nothing is stored', async () => {
-    const states: Probe[] = [];
-
-    await mount((state) => states.push(state));
-
-    expect(states.at(-1)).toEqual({ status: 'anonymous', userEmail: null });
+    expect(states.at(-1)).toEqual({
+      status: 'anonymous',
+      userEmail: null,
+      projectIssue: null,
+    });
     expect(authApi.me).not.toHaveBeenCalled();
-  });
-
-  it('drops a stored token the server rejects', async () => {
-    await AsyncStorage.setItem(DEV_TOKEN_KEY, 'expired-token');
-    (authApi.me as jest.Mock).mockRejectedValue(
-      Object.assign(new Error('Invalid token.'), { status: 401 }),
-    );
-    const states: Probe[] = [];
-
-    await mount((state) => states.push(state));
-
-    expect(states.at(-1)).toEqual({ status: 'anonymous', userEmail: null });
   });
 
   it('surfaces an unreachable API without claiming a valid session', async () => {
@@ -145,39 +125,25 @@ describe('with no Firebase credentials in the build', () => {
       app_env: 'production',
     });
     const states: Probe[] = [];
-    let observed: string | null = null;
 
-    await act(async () => {
-      ReactTestRenderer.create(
-        <SessionProvider>
-          <Probe_
-            onState={(state) => {
-              states.push(state);
-              observed = state.status;
-            }}
-          />
-        </SessionProvider>,
-      );
-    });
+    await mount((state) => states.push(state));
 
-    expect(observed).toBe('anonymous');
+    expect(states.at(-1)?.status).toBe('anonymous');
   });
 });
 
 describe('sign out', () => {
   it('tells the server before clearing the local session', async () => {
-    await AsyncStorage.setItem(DEV_TOKEN_KEY, 'stored-token');
+    firebaseApp.__setFirebaseConfigured(true);
+    firebaseAuthModule.__setFirebaseUser({ email: 'firebase@example.com' });
+    (authApi.me as jest.Mock).mockResolvedValue({ ...USER, email: 'firebase@example.com' });
     const states: Probe[] = [];
     let signOut: (() => Promise<void>) | null = null;
 
     await act(async () => {
       ReactTestRenderer.create(
         <SessionProvider>
-          <Probe_
-            onState={(state) => {
-              states.push(state);
-            }}
-          />
+          <Probe_ onState={(state) => states.push(state)} />
           <Capture onReady={(fn) => (signOut = fn)} />
         </SessionProvider>,
       );
@@ -188,12 +154,18 @@ describe('sign out', () => {
     });
 
     expect(authApi.logout).toHaveBeenCalledTimes(1);
-    expect(states.at(-1)).toEqual({ status: 'anonymous', userEmail: null });
-    await expect(AsyncStorage.getItem(DEV_TOKEN_KEY)).resolves.toBeNull();
+    expect(states.at(-1)).toEqual({
+      status: 'anonymous',
+      userEmail: null,
+      projectIssue: null,
+    });
+    expect(firebaseAuthModule.default.auth().signOut).toHaveBeenCalled();
   });
 
   it('still clears the session when the server acknowledgement fails', async () => {
-    await AsyncStorage.setItem(DEV_TOKEN_KEY, 'stored-token');
+    firebaseApp.__setFirebaseConfigured(true);
+    firebaseAuthModule.__setFirebaseUser({ email: 'firebase@example.com' });
+    (authApi.me as jest.Mock).mockResolvedValue({ ...USER, email: 'firebase@example.com' });
     (authApi.logout as jest.Mock).mockRejectedValue(new Error('offline'));
     const states: Probe[] = [];
     let signOut: (() => Promise<void>) | null = null;
@@ -235,28 +207,46 @@ describe('with Firebase credentials in the build', () => {
 
     await mount((state) => states.push(state));
 
-    expect(states.at(-1)).toEqual({ status: 'authenticated', userEmail: 'firebase@example.com' });
+    expect(states.at(-1)).toEqual({
+      status: 'authenticated',
+      userEmail: 'firebase@example.com',
+      projectIssue: null,
+    });
   });
 
-  it('signs out of Firebase as well as clearing local state', async () => {
+  it('drops the session when the server rejects the Firebase token', async () => {
     firebaseApp.__setFirebaseConfigured(true);
     firebaseAuthModule.__setFirebaseUser({ email: 'firebase@example.com' });
-    mockApiAsFirebaseUser();
-    let signOut: (() => Promise<void>) | null = null;
+    (authApi.me as jest.Mock).mockRejectedValue(
+      Object.assign(new Error('Invalid token.'), { status: 401 }),
+    );
+    const states: Probe[] = [];
 
-    await act(async () => {
-      ReactTestRenderer.create(
-        <SessionProvider>
-          <Capture onReady={(fn) => (signOut = fn)} />
-        </SessionProvider>,
-      );
+    await mount((state) => states.push(state));
+
+    expect(states.at(-1)).toEqual({
+      status: 'anonymous',
+      userEmail: null,
+      projectIssue: null,
     });
+  });
 
-    await act(async () => {
-      await signOut?.();
+  it('flags a build pointed at a different Firebase project than the server', async () => {
+    firebaseApp.__setFirebaseConfigured(true);
+    (authApi.config as jest.Mock).mockResolvedValue({
+      provider: 'firebase',
+      firebase_enabled: true,
+      registration_enabled: true,
+      app_env: 'production',
+      project_id: 'server-project',
     });
+    const states: Probe[] = [];
 
-    expect(firebaseAuthModule.default.auth().signOut).toHaveBeenCalled();
+    await mount((state) => states.push(state));
+
+    // The app mock's project is 'finance-ai-test'; the server verifies
+    // 'server-project', so sign-in would succeed and then be rejected.
+    expect(states.at(-1)?.projectIssue).toBe('mismatch');
   });
 });
 

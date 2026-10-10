@@ -30,13 +30,5 @@ export function defaultApiBaseUrl(): string {
 
 export const API_BASE_URL = API_BASE_URL_OVERRIDE ?? defaultApiBaseUrl();
 
-/**
- * Key used to persist the development session token.
- *
- * Firebase persists its own credentials; this holds the backend-issued token
- * used by the development-token fallback only.
- */
-export const DEV_TOKEN_KEY = 'finance_ai.dev_token';
-
 /** How often the fraud and notification badge counts are refreshed, in ms. */
 export const BADGE_POLL_INTERVAL_MS = 60_000;

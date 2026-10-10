@@ -408,4 +408,6 @@ export interface AuthConfig {
   firebase_enabled: boolean
   registration_enabled: boolean
   app_env: string
+  /** The Firebase project id the backend verifies, when it is on Firebase. */
+  project_id?: string | null
 }

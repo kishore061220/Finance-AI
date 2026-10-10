@@ -28,9 +28,9 @@ when the API and the app are served from the same origin.
 
 ## Firebase configuration
 
-Optional. With none of these set, the app falls back to the backend's
-development-token endpoint, which the API only enables when Firebase is off and
-`ALLOW_DEV_AUTH=true`.
+Required for sign-in. Firebase is the only authentication path this client
+offers, matching the backend. With none of these set the login screen shows an
+explanatory notice instead of a form, because the build cannot mint a token.
 
 Copy `.env.example` to `.env.local` and fill it in to enable Firebase:
 
@@ -68,7 +68,7 @@ who actually reach the login screen on a Firebase-enabled server.
 ```
 src/
   api/          no; see lib/endpoints.ts
-  auth/         SessionContext — Firebase and development-token sessions
+  auth/         SessionContext — Firebase-only sessions
   components/   AppLayout (signed-in chrome), charts.tsx, ui.tsx
   hooks/        useAsync — fetch-on-mount with loading/error/reload
   lib/          api.ts (axios client), endpoints.ts (typed API surface),
@@ -79,8 +79,8 @@ src/
 
 The API client in `lib/api.ts` attaches the bearer token from memory on every
 request. The token is not stored in `localStorage`: an XSS bug would otherwise be
-a session theft. Firebase restores its own session from IndexedDB, and the
-development token lives in `sessionStorage`, which dies with the tab.
+a session theft. Firebase restores its own session from IndexedDB, and
+`onIdTokenChanged` re-adopts the token when the SDK silently renews it.
 
 `lib/endpoints.ts` is the only place that knows API URLs. Pages call typed
 wrappers, never raw paths.

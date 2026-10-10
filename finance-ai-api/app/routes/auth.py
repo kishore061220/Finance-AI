@@ -60,6 +60,10 @@ def auth_config() -> dict:
         ),
         "firebase_enabled": settings.firebase_enabled,
         "registration_enabled": settings.firebase_enabled,
+        # The project id the server verifies, so a client can refuse to sign in
+        # when it was built against a different Firebase project. A project id
+        # is not a secret.
+        "project_id": settings.firebase_project_id or None,
         "app_env": settings.app_env,
     }
 

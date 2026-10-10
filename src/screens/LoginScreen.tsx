@@ -4,14 +4,15 @@
  * The forms offered depend on what the *server* reports, not on what this build
  * happens to contain. `/api/auth/config` decides:
  *
- *  - `firebase`      -> email/password and Google.
- *  - `dev`           -> a development-token button, and only that. No email field,
- *                       because there is no way to verify a password against it.
- *  - `unconfigured`  -> nothing to offer. An explanatory message, because the
+ *  - `firebase`      -> email/password, and a warning when this build points at
+ *                       a different project or has no `google-services.json`.
+ *  - `dev` /
+ *    `unconfigured`  -> nothing to offer. An explanatory message, because the
  *                       alternative is a form that cannot succeed.
  *
- * Registering is a Firebase-only operation, so the "create account" toggle appears
- * only when the server has Firebase enabled.
+ * The only authentication path this client offers is Firebase. Registering is a
+ * Firebase-only operation, so the "create account" toggle appears only when the
+ * server has Firebase enabled.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -25,13 +26,13 @@ import {
   Screen,
   Spinner,
 } from '../components/ui';
-import { useSession } from '../auth/SessionProvider';
+import { useSession, isFirebaseAvailable } from '../auth/SessionProvider';
 import { space, styles, type } from '../theme';
 
 type Mode = 'signIn' | 'register';
 
 export default function LoginScreen() {
-  const { config, signInWithEmail, signUp, signInAsDeveloper } = useSession();
+  const { status, config, firebaseProjectIssue, signInWithEmail, signUp } = useSession();
 
   const [mode, setMode] = useState<Mode>('signIn');
   const [email, setEmail] = useState('');
@@ -40,7 +41,10 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const provider = config?.provider ?? null;
+  const buildFirebase = isFirebaseAvailable();
+  const serverSaysFirebase = config?.firebase_enabled ?? false;
+  const decisionKnown = config !== null;
+  const canOfferForms = serverSaysFirebase || (buildFirebase && !decisionKnown);
 
   const run = useCallback(async (action: () => Promise<void>) => {
     setBusy(true);
@@ -65,7 +69,7 @@ export default function LoginScreen() {
     });
   };
 
-  if (provider === null) {
+  if (status === 'loading' && config === null && buildFirebase) {
     return (
       <Screen>
         <View style={styles.centered}>
@@ -76,34 +80,55 @@ export default function LoginScreen() {
     );
   }
 
-  if (provider === 'unconfigured') {
+  const renderProjectIssue = () => {
+    if (!firebaseProjectIssue) return null;
+    if (firebaseProjectIssue === 'unconfigured') {
+      return (
+        <AlertBanner tone="error">
+          This build has no google-services.json, so it cannot obtain an ID token
+          for the Firebase server. Add the file and rebuild.
+        </AlertBanner>
+      );
+    }
     return (
-      <Screen>
-        <View style={styles.centered}>
-          <Text style={type.title}>Finance AI</Text>
-          <AlertBanner tone="error">
-            This server has no authentication provider configured. Set up Firebase
-            Authentication, or run a local server with ALLOW_DEV_AUTH=true.
-          </AlertBanner>
-          <Text style={type.small}>
-            Sign in will return once the server is configured.
-          </Text>
-        </View>
-      </Screen>
+      <AlertBanner tone="error">
+        This app is built against one Firebase project, but the server verifies a
+        different one. Sign-in would succeed and then be rejected. Rebuild the app
+        with the project the server uses.
+      </AlertBanner>
     );
-  }
+  };
 
-  if (provider === 'dev') {
-    return (
-      <Screen>
-        <View style={styles.centered}>
-          <Text style={type.title}>Finance AI</Text>
-          <Text style={type.small}>
-            This server is running in development authentication mode. No password is
-            checked; the API mints a token for the address entered below.
-          </Text>
+  return (
+    <Screen>
+      <View style={styles.centered}>
+        <Text style={type.title}>Finance AI</Text>
+        <Text style={type.small}>
+          {canOfferForms
+            ? mode === 'signIn'
+              ? 'Sign in to see your spending, budgets and loans.'
+              : 'Create an account. Email verification is handled by Firebase.'
+            : 'This server has no Firebase Authentication configured, so no sign-in form can succeed.'}
+        </Text>
+      </View>
 
-          {error ? <AlertBanner tone="error">{error}</AlertBanner> : null}
+      {error ? <AlertBanner tone="error">{error}</AlertBanner> : null}
+
+      {!canOfferForms ? (
+        <AlertBanner tone="error">
+          No sign-in form can succeed against this server. Configure the backend
+          with Firebase credentials and build this app with the same Firebase
+          project.
+        </AlertBanner>
+      ) : (
+        <>
+          {renderProjectIssue()}
+
+          {mode === 'register' ? (
+            <Field label="Name">
+              <Input value={name} onChangeText={setName} accessibilityLabel="Name" autoComplete="name" />
+            </Field>
+          ) : null}
 
           <Field label="Email">
             <Input
@@ -117,86 +142,40 @@ export default function LoginScreen() {
             />
           </Field>
 
+          <Field
+            label="Password"
+            hint={mode === 'register' ? 'At least 6 characters.' : undefined}
+          >
+            <Input
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+              placeholder="••••••••"
+              accessibilityLabel="Password"
+            />
+          </Field>
+
           <Button
-            label="Continue as developer"
-            onPress={() => {
-              void run(() => signInAsDeveloper(email.trim() || 'dev@example.com'));
-            }}
+            label={mode === 'signIn' ? 'Sign in' : 'Create account'}
+            onPress={submitCredentials}
             loading={busy}
+            disabled={email.trim() === '' || password === '' || (mode === 'register' && name.trim() === '')}
           />
 
-          <Text style={[type.small, styles.centeredText]}>
-            This path is unavailable on a server with Firebase configured, and the API
-            refuses to mint these tokens in production.
-          </Text>
-        </View>
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen>
-      <View style={styles.centered}>
-        <Text style={type.title}>Finance AI</Text>
-        <Text style={type.small}>
-          {mode === 'signIn'
-            ? 'Sign in to see your spending, budgets and loans.'
-            : 'Create an account. Email verification is handled by Firebase.'}
-        </Text>
-      </View>
-
-      {error ? <AlertBanner tone="error">{error}</AlertBanner> : null}
-
-      {mode === 'register' ? (
-        <Field label="Name">
-          <Input value={name} onChangeText={setName} accessibilityLabel="Name" autoComplete="name" />
-        </Field>
-      ) : null}
-
-      <Field label="Email">
-        <Input
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoComplete="email"
-          placeholder="you@example.com"
-          accessibilityLabel="Email"
-        />
-      </Field>
-
-      <Field
-        label="Password"
-        hint={mode === 'register' ? 'At least 6 characters.' : undefined}
-      >
-        <Input
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-          placeholder="••••••••"
-          accessibilityLabel="Password"
-        />
-      </Field>
-
-      <Button
-        label={mode === 'signIn' ? 'Sign in' : 'Create account'}
-        onPress={submitCredentials}
-        loading={busy}
-        disabled={email.trim() === '' || password === '' || (mode === 'register' && name.trim() === '')}
-      />
-
-      {config?.registration_enabled ? (
-        <Button
-          label={mode === 'signIn' ? 'Create an account instead' : 'I already have an account'}
-          variant="secondary"
-          onPress={() => {
-            setMode(mode === 'signIn' ? 'register' : 'signIn');
-            setError(null);
-          }}
-        />
-      ) : null}
+          {config?.registration_enabled ? (
+            <Button
+              label={mode === 'signIn' ? 'Create an account instead' : 'I already have an account'}
+              variant="secondary"
+              onPress={() => {
+                setMode(mode === 'signIn' ? 'register' : 'signIn');
+                setError(null);
+              }}
+            />
+          ) : null}
+        </>
+      )}
 
       <Text style={[type.small, { textAlign: 'center', marginTop: space.sm }]}>
         Authentication is handled by Firebase. This app never sees your password.

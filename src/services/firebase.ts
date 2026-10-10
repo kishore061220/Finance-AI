@@ -6,11 +6,11 @@
  * per-app credentials, so it is not committed, and a build without it is the
  * normal state of a fresh clone.
  *
- * So the modules are loaded lazily and behind a guard, and the app falls back
- * to the backend's development-token endpoint. The backend independently refuses
- * to mint development tokens whenever Firebase is configured, so the fallback
- * cannot become a production authentication path: a build with no Firebase can
- * only ever talk to a server that also has none.
+ * So the modules are loaded lazily and behind a guard. Firebase is the only
+ * authentication path: a build with no `google-services.json` cannot sign in,
+ * and the login screen says so instead of offering a form that cannot succeed.
+ * The backend independently refuses to mint development tokens whenever Firebase
+ * is configured, so there is no second authentication path to fall back to.
  *
  * The loads use `require` rather than `import()`. Two reasons: Metro only bundles
  * a module when the specifier is a string literal, which a computed dynamic
@@ -87,7 +87,8 @@ export async function firebaseAuth(): Promise<FirebaseAuthTypes.Module | null> {
     cachedAuth = authModule.default.auth(app);
     return cachedAuth;
   } catch {
-    // A failed load leaves the app usable in development-token mode.
+    // A failed load leaves the app unable to sign in, which the login screen
+    // reports; there is no fallback provider.
     availability = false;
     return null;
   }
@@ -103,4 +104,17 @@ export function resetFirebaseCache(): void {
   cachedAppModule = null;
   cachedAuth = null;
   availability = null;
+}
+
+/**
+ * The Firebase project id this build was configured with, or null.
+ *
+ * Read from the app's own options, which come from `google-services.json`. The
+ * server reports the project it verifies tokens for, so the two can be compared
+ * before a sign-in succeeds and then fails on the first API call.
+ */
+export function firebaseProjectId(): string | null {
+  const appModule = loadAppModule();
+  const app: FirebaseApp | undefined = appModule?.default.apps[0];
+  return app?.options?.projectId ?? null;
 }

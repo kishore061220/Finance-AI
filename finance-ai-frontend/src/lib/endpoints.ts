@@ -224,6 +224,69 @@ export const mlApi = {
   status: (): Promise<MlStatus> => get<MlStatus>('/api/ml/status'),
 }
 
+// ---------------------------------------------------------------- reports
+
+/** A row from the report history (`ReportResponse`). */
+export interface ReportRecord {
+  id: number
+  report_type: string
+  report_format: string
+  period_start: string | null
+  period_end: string | null
+  category: string | null
+  row_count: number | null
+  file_size_bytes: number | null
+  created_at: string | null
+}
+
+export interface ReportRequest {
+  report_type: string
+  report_format: string
+  period_start?: string
+  period_end?: string
+  category?: string
+}
+
+export const reportApi = {
+  types: (): Promise<{ report_types: string[]; report_formats: string[] }> =>
+    get('/api/reports/types'),
+  generate: (payload: ReportRequest): Promise<Blob> =>
+    request<Blob>({
+      method: 'POST',
+      url: '/api/reports/generate',
+      data: payload,
+      responseType: 'blob',
+    }),
+  list: (params?: { report_type?: string; limit?: number }): Promise<ReportRecord[]> =>
+    get<ReportRecord[]>('/api/reports', params),
+}
+
+// ---------------------------------------------------------------- assistant
+
+export interface AssistantRequest {
+  message: string
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  include_context?: boolean
+}
+
+export const assistantApi = {
+  config: (): Promise<{
+    provider: string
+    model: string | null
+    remote_configured: boolean
+    message: string
+    suggestions: string[]
+  }> => get('/api/assistant/config'),
+  ask: (payload: AssistantRequest): Promise<{
+    reply: string
+    provider: string
+    model: string | null
+    context_used: string[]
+    suggestions: string[]
+    fallback: boolean
+  }> => post('/api/assistant', payload),
+}
+
 // ---------------------------------------------------------------- categorization
 
 export interface SmsParseResult {

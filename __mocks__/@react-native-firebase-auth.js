@@ -1,10 +1,11 @@
 /**
  * Firebase auth module mock.
  *
- * Holds an in-memory user so `onAuthStateChanged` and `getIdToken` behave like a
- * real session. `signInWithEmailAndPassword` and `createUserWithEmailAndPassword`
- * reject the way Firebase does for a wrong password or an existing account, so a
- * test can assert the app surfaces the SDK's own message instead of a generic one.
+ * Holds an in-memory user so `onIdTokenChanged` (and the older
+ * `onAuthStateChanged`) and `getIdToken` behave like a real session.
+ * `signInWithEmailAndPassword` and `createUserWithEmailAndPassword` reject the
+ * way Firebase does for a wrong password or an existing account, so a test can
+ * assert the app surfaces the SDK's own message instead of a generic one.
  */
 
 const state = {
@@ -38,6 +39,14 @@ const auth = {
     // Firebase fires immediately with the current user, and a test must observe
     // that without needing to trigger anything itself.
     Promise.resolve().then(() => (observer ? observer(state.user) : error?.(state.error)));
+    return () => {
+      state.observers = state.observers.filter((entry) => entry !== observer);
+    };
+  },
+
+  onIdTokenChanged(observer) {
+    state.observers.push(observer);
+    Promise.resolve().then(() => observer(state.user));
     return () => {
       state.observers = state.observers.filter((entry) => entry !== observer);
     };
@@ -89,6 +98,16 @@ function onAuthStateChanged(_authInstance, observer, error) {
 }
 
 /**
+ * The modular `onIdTokenChanged(auth, observer)` form.
+ *
+ * The session provider subscribes to this rather than `onAuthStateChanged`,
+ * because it also fires when Firebase silently renews the ID token.
+ */
+function onIdTokenChanged(_authInstance, observer) {
+  return auth.onIdTokenChanged(observer);
+}
+
+/**
  * Put the module into a signed-in or signed-out state and notify observers,
  * which is what a `signInWithCredential` call does on a real device.
  */
@@ -113,4 +132,5 @@ module.exports = {
   updateProfile: auth.updateProfile,
   signOut: auth.signOut,
   onAuthStateChanged,
+  onIdTokenChanged,
 };

@@ -4,9 +4,15 @@
  * The token lives in memory, not localStorage. A Firebase ID token in
  * localStorage is readable by any script that runs on the page, so an XSS bug
  * becomes a session theft. Persistence across reloads comes from Firebase's own
- * `onAuthStateChanged`, which re-derives a fresh token from IndexedDB - so the
+ * `onIdTokenChanged`, which re-derives a fresh token from IndexedDB - so the
  * trade is one extra round trip on load in exchange for not leaving a bearer
  * token on disk.
+ *
+ * Token refresh is Firebase-driven: the SDK renews the ID token before it
+ * expires and this provider watches `onIdTokenChanged` (which fires for both
+ * sign-in/sign-out and token refresh), re-adopting the current token so every
+ * request carries a live credential. There is no development-token fallback:
+ * this client authenticates only against Firebase.
  */
 
 import {
@@ -21,28 +27,41 @@ import {
 } from 'react'
 
 import { ApiError, configureAuth, request } from '@/lib/api'
-import { firebaseAuth, isFirebaseConfigured } from '@/lib/firebase'
+import {
+  firebaseAuth,
+  firebaseProjectId,
+  isFirebaseConfigured,
+} from '@/lib/firebase'
 import type { AuthConfig, UserResponse } from '@/types'
 
 export type SessionStatus = 'loading' | 'authenticated' | 'anonymous'
+
+/**
+ * Why a Firebase build cannot show working sign-in forms even though the server
+ * says it is on Firebase.
+ *
+ * - `null`            – nothing wrong, or the server is not on Firebase.
+ * - `'unconfigured'`  – the server verifies Firebase tokens but this build has
+ *                       no `VITE_FIREBASE_*` variables, so it cannot mint one.
+ * - `'mismatch'`      – this build points at a different Firebase project than
+ *                       the backend verifies. Sign-in would succeed and then be
+ *                       rejected on the first API call.
+ */
+export type FirebaseProjectIssue = 'unconfigured' | 'mismatch' | null
 
 interface SessionState {
   status: SessionStatus
   user: UserResponse | null
   config: AuthConfig | null
+  firebaseProjectIssue: FirebaseProjectIssue
   signInWithEmail: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, name: string) => Promise<void>
   signInWithGoogle: () => Promise<void>
-  /** Development-only sign-in. Calls the backend's dev-token endpoint. */
-  signInAsDeveloper: (email: string) => Promise<void>
   signOut: () => Promise<void>
   getToken: () => string | null
 }
 
 const SessionContext = createContext<SessionState | null>(null)
-
-/** Storage key for the dev-token session, which is a real backend credential. */
-const DEV_TOKEN_KEY = 'finance_ai.dev_token'
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>('loading')
@@ -85,9 +104,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  // Resolve which provider the server is using, then restore any session.
+  /**
+   * Resolve which provider the server is using, then restore any session.
+   *
+   * `onIdTokenChanged` rather than `onAuthStateChanged`: the former also fires
+   * when Firebase silently refreshes the ID token, which is what keeps a session
+   * alive past the one-hour lifetime without a 401 in between.
+   */
   useEffect(() => {
     let cancelled = false
+    let unsubscribeFirebase: (() => void) | null = null
 
     void (async () => {
       let resolved: AuthConfig | null = null
@@ -103,13 +129,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       if (resolved) setConfig(resolved)
 
-      // Awaited, not called synchronously: firebaseAuth() now performs a dynamic
-      // import, so the provider is only available after the SDK chunk loads.
       const auth = await firebaseAuth()
       if (auth) {
-        // Firebase persists the session itself; ask it who is signed in.
-        const { onAuthStateChanged } = await import('firebase/auth')
-        onAuthStateChanged(auth, async (firebaseUser) => {
+        // Firebase persists the session itself; ask it who is signed in. The
+        // listener is held so unmounting never leaves a dead observer behind.
+        const { onIdTokenChanged } = await import('firebase/auth')
+        unsubscribeFirebase = onIdTokenChanged(auth, async (firebaseUser) => {
           if (cancelled) return
           if (!firebaseUser) {
             signOutLocal()
@@ -120,18 +145,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      // No Firebase config: fall back to a stored development token if present.
-      const stored = sessionStorage.getItem(DEV_TOKEN_KEY)
-      if (stored) {
-        await adoptToken(stored)
-        return
-      }
-
+      // No Firebase configuration in this build and no other provider: the
+      // server decides what the login screen may offer.
       setStatus('anonymous')
     })()
 
     return () => {
       cancelled = true
+      unsubscribeFirebase?.()
     }
   }, [adoptToken, signOutLocal])
 
@@ -176,28 +197,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await adoptToken(await credential.user.getIdToken())
   }, [adoptToken])
 
-  const signInAsDeveloper = useCallback(
-    async (email: string) => {
-      const response = await request<{ access_token: string }>(
-        {
-          method: 'POST',
-          url: '/api/auth/dev-token',
-          data: { subject: `dev-${email}`, email, name: 'Developer', expires_minutes: 480 },
-        },
-        { skipAuth: true },
-      )
-      sessionStorage.setItem(DEV_TOKEN_KEY, response.access_token)
-      await adoptToken(response.access_token)
-    },
-    [adoptToken],
-  )
-
   /**
    * End the session.
    *
    * Order matters here. The server notification runs *before* anything clears
    * the local token, because the interceptor reads the token from memory: sign
-   * Firebase out first and the onAuthStateChanged handler clears `tokenRef`, so
+   * Firebase out first and the onIdTokenChanged handler clears `tokenRef`, so
    * the logout request would go out unauthenticated and the server-side audit
    * record would never be written. The logout call is best effort and must not
    * prevent the local sign-out, but `signOutLocal` runs unconditionally at the
@@ -217,19 +222,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // Already signed out, or the SDK failed to load. Local state still clears.
       })
     }
-    sessionStorage.removeItem(DEV_TOKEN_KEY)
     signOutLocal()
   }, [signOutLocal])
+
+  /**
+   * Detect a build that cannot authenticate against this server even though the
+   * server believes it is on Firebase.
+   */
+  const firebaseProjectIssue = useMemo<FirebaseProjectIssue>(() => {
+    if (!config?.firebase_enabled) return null
+    const buildProjectId = firebaseProjectId()
+    if (!buildProjectId) return 'unconfigured'
+    if (config.project_id && buildProjectId !== config.project_id) return 'mismatch'
+    return null
+  }, [config])
 
   const value = useMemo<SessionState>(
     () => ({
       status,
       user,
       config,
+      firebaseProjectIssue,
       signInWithEmail,
       signUp,
       signInWithGoogle,
-      signInAsDeveloper,
       signOut,
       getToken,
     }),
@@ -237,10 +253,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       status,
       user,
       config,
+      firebaseProjectIssue,
       signInWithEmail,
       signUp,
       signInWithGoogle,
-      signInAsDeveloper,
       signOut,
       getToken,
     ],

@@ -1,10 +1,12 @@
 /**
  * Session and routing behaviour.
  *
- * The important assertions are the redirect rules: an anonymous visitor must not
- * reach a protected screen, and an authenticated one must not be stranded on the
- * login page. A screen that renders without its guard is a data-exposure bug,
- * because every one of them fetches on mount.
+ * All sessions are Firebase-only. Tests drive the provider through the real
+ * `onIdTokenChanged` listener, mocking just the Firebase modules behind the
+ * boundaries the app imports. The important assertions are the redirect rules:
+ * an anonymous visitor must not reach a protected screen, and an authenticated
+ * one must not be stranded on the login page. A screen that renders without its
+ * guard is a data-exposure bug, because every one of them fetches on mount.
  */
 
 import { render, screen, waitFor } from '@testing-library/react'
@@ -17,6 +19,10 @@ import App from '@/App'
 import { SessionProvider } from '@/auth/SessionContext'
 import { api } from '@/lib/api'
 import type { AuthConfig, UserResponse } from '@/types'
+import { fb } from './firebaseMock'
+
+vi.mock('firebase/auth', async () => (await import('./firebaseMock')).authModule())
+vi.mock('@/lib/firebase', async () => (await import('./firebaseMock')).firebaseLibModule())
 
 const TEST_USER: UserResponse = {
   id: 1,
@@ -30,10 +36,19 @@ const TEST_USER: UserResponse = {
   last_login_at: null,
 }
 
+const FIREBASE_CONFIG: AuthConfig = {
+  provider: 'firebase',
+  firebase_enabled: true,
+  registration_enabled: true,
+  project_id: 'finance-ai-test',
+  app_env: 'development',
+}
+
 const DEV_CONFIG: AuthConfig = {
   provider: 'dev',
   firebase_enabled: false,
   registration_enabled: false,
+  project_id: null,
   app_env: 'development',
 }
 
@@ -46,7 +61,7 @@ const DEV_CONFIG: AuthConfig = {
  */
 function mockApi(overrides: Record<string, unknown> = {}) {
   const defaults: Record<string, unknown> = {
-    '/api/auth/config': DEV_CONFIG,
+    '/api/auth/config': FIREBASE_CONFIG,
     '/api/auth/me': TEST_USER,
     '/api/auth/logout': { signed_out: true },
     '/api/dashboard': {
@@ -117,6 +132,9 @@ function mockApi(overrides: Record<string, unknown> = {}) {
  */
 const LAZY_TIMEOUT = 10_000
 
+/** Preserved so the adapter a single test installs cannot leak into the next. */
+const ORIGINAL_ADAPTER = api.defaults.adapter
+
 function renderApp(initialPath = '/') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -127,13 +145,20 @@ function renderApp(initialPath = '/') {
   )
 }
 
+/** A signed-in Firebase user, as `onIdTokenChanged` would report it. */
+function signInFirebase(email = 'ada@example.com') {
+  fb.setConfigured(true)
+  fb.setProjectId('finance-ai-test')
+  fb.setUser({ email, uid: 'uid-9', displayName: 'Ada Lovelace' })
+}
+
 beforeEach(() => {
-  sessionStorage.clear()
+  fb.reset()
 })
 
 afterEach(() => {
+  api.defaults.adapter = ORIGINAL_ADAPTER
   vi.restoreAllMocks()
-  sessionStorage.clear()
 })
 
 describe('anonymous access', () => {
@@ -148,54 +173,83 @@ describe('anonymous access', () => {
     expect(screen.queryByRole('heading', { name: /^transactions$/i })).not.toBeInTheDocument()
   })
 
-  it('shows the developer form when the server reports dev auth', async () => {
-    mockApi()
+  it('shows an explanatory notice on a dev-only server and offers no forms', async () => {
+    mockApi({ '/api/auth/config': DEV_CONFIG })
     renderApp()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /continue as developer/i })).toBeInTheDocument()
+      expect(screen.getByText(/no sign-in form can succeed/i)).toBeInTheDocument()
     })
-    expect(screen.getByText(/development authentication/i)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /continue as developer/i }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument()
   })
 
-  it('does not offer email sign-in forms on a dev-only server', async () => {
-    mockApi()
+  it('shows an explanatory notice on an unconfigured server', async () => {
+    mockApi({
+      '/api/auth/config': {
+        provider: 'unconfigured',
+        firebase_enabled: false,
+        registration_enabled: false,
+        project_id: null,
+        app_env: 'production',
+      } satisfies AuthConfig,
+    })
     renderApp()
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+      expect(screen.getByText(/no sign-in form can succeed/i)).toBeInTheDocument()
     })
-    // Email sign-in cannot work without Firebase; showing it would be a dead end.
-    expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /continue with google/i })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument()
   })
 
   it('renders the login screen even when the config endpoint is unreachable', async () => {
+    fb.setConfigured(true)
     vi.spyOn(api, 'request').mockImplementation((config) => {
       if (String(config.url).includes('/api/auth/config')) {
         return Promise.reject(Object.assign(new AxiosError('down'), { response: undefined }))
       }
-      return Promise.resolve({ data: [] } as never)
+      return Promise.resolve({ data: TEST_USER } as never)
     })
 
     renderApp('/transactions')
 
-    // A dead config endpoint must not leave the user on a blank screen: some
-    // sign-in affordance has to render either way.
+    // A dead config endpoint must not leave the user on a blank screen: a
+    // Firebase-ready build still offers the forms.
     await waitFor(() => {
-      const buttons = screen.getAllByRole('button')
-      expect(
-        buttons.some((button) => /sign in|continue/i.test(button.textContent ?? '')),
-      ).toBe(true)
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    })
+  })
+
+  it('warns when the build points at a different Firebase project than the server', async () => {
+    mockApi({ '/api/auth/config': { ...FIREBASE_CONFIG, project_id: 'server-project' } })
+    fb.setConfigured(true)
+    fb.setProjectId('client-project')
+    renderApp()
+
+    await waitFor(() => {
+      expect(screen.getByText(/different one/i)).toBeInTheDocument()
+    })
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+  })
+
+  it('warns when the server is on Firebase but this build is not configured', async () => {
+    mockApi()
+    fb.setConfigured(false)
+    renderApp()
+
+    await waitFor(() => {
+      expect(screen.getByText(/VITE_FIREBASE/i)).toBeInTheDocument()
     })
   })
 })
 
 describe('authenticated access', () => {
-  it('restores a session from a stored development token', async () => {
+  it('restores a session when Firebase reports a signed-in user', async () => {
     const seen = mockApi()
-    // The dev token stands in for a Firebase ID token re-derived on load.
-    sessionStorage.setItem('finance_ai.dev_token', 'stored-token')
+    signInFirebase()
 
     renderApp('/transactions')
 
@@ -203,13 +257,13 @@ describe('authenticated access', () => {
       expect(screen.getByRole('heading', { name: /^transactions$/i })).toBeInTheDocument()
     })
 
-    // The stored token must actually be used to identify the caller.
+    // The Firebase token must actually be used to identify the caller.
     expect(seen.some((call) => call.url === '/api/auth/me')).toBe(true)
   })
 
   it('redirects away from /login once signed in', async () => {
     const seen = mockApi()
-    sessionStorage.setItem('finance_ai.dev_token', 'stored-token')
+    signInFirebase()
 
     renderApp('/login')
 
@@ -220,34 +274,11 @@ describe('authenticated access', () => {
     expect(
       await screen.findByRole('heading', { name: /welcome back/i }, { timeout: LAZY_TIMEOUT }),
     ).toBeInTheDocument()
-
-    // The redirect replaced the login form; it did not merely hide the button.
-    expect(
-      screen.queryByRole('button', { name: /continue as developer/i }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument()
     expect(seen.some((call) => call.url === '/api/auth/me')).toBe(true)
   })
 
-  it('sends the developer sign-in through the backend dev-token endpoint', async () => {
-    const seen = mockApi({
-      '/api/auth/dev-token': { access_token: 'fresh-token', token_type: 'bearer', expires_in: 28800, provider: 'dev' },
-    })
-
-    renderApp()
-    await userEvent.type(await screen.findByLabelText(/email/i), 'dev@example.com')
-    await userEvent.click(screen.getByRole('button', { name: /continue as developer/i }))
-
-    await waitFor(() => {
-      expect(seen.some((call) => call.url === '/api/auth/dev-token')).toBe(true)
-    })
-    expect(sessionStorage.getItem('finance_ai.dev_token')).toBe('fresh-token')
-  })
-
-  it('discards the session when the stored token is rejected', async () => {
-    mockApi({
-      '/api/auth/me': undefined as unknown,
-    })
-
+  it('discards the session when the server rejects the Firebase token', async () => {
     vi.spyOn(api, 'request').mockImplementation((config) => {
       const url = String(config.url)
       if (url === '/api/auth/me') {
@@ -258,24 +289,24 @@ describe('authenticated access', () => {
         )
       }
       if (url === '/api/auth/config') {
-        return Promise.resolve({ data: DEV_CONFIG } as never)
+        return Promise.resolve({ data: FIREBASE_CONFIG } as never)
       }
       return Promise.resolve({ data: [] } as never)
     })
+    signInFirebase()
 
-    sessionStorage.setItem('finance_ai.dev_token', 'stale-token')
     renderApp('/transactions')
 
     // A rejected token must leave the user anonymous, not on a screen whose
     // every request is about to fail.
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /continue as developer/i })).toBeInTheDocument()
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
     })
   })
 
   it('clears the session and returns to login on sign-out', async () => {
     mockApi()
-    sessionStorage.setItem('finance_ai.dev_token', 'stored-token')
+    signInFirebase()
 
     renderApp('/transactions')
     await screen.findByRole('heading', { name: /^transactions$/i })
@@ -283,32 +314,68 @@ describe('authenticated access', () => {
     await userEvent.click(screen.getAllByRole('button', { name: /sign out/i })[0])
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /continue as developer/i })).toBeInTheDocument()
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
     })
-    expect(sessionStorage.getItem('finance_ai.dev_token')).toBeNull()
+    // Firebase itself was signed out, not just the local state.
+    expect(fb.user).toBeNull()
   })
 
   it('signs out locally even when the server acknowledgement fails', async () => {
-    mockApi()
-    sessionStorage.setItem('finance_ai.dev_token', 'stored-token')
-
     vi.spyOn(api, 'request').mockImplementation((config) => {
       const url = String(config.url)
       if (url === '/api/auth/logout') {
         return Promise.reject(new AxiosError('gateway down'))
       }
-      if (url === '/api/auth/config') return Promise.resolve({ data: DEV_CONFIG } as never)
+      if (url === '/api/auth/config') return Promise.resolve({ data: FIREBASE_CONFIG } as never)
       if (url === '/api/auth/me') return Promise.resolve({ data: TEST_USER } as never)
       return Promise.resolve({ data: [] } as never)
     })
+    signInFirebase()
 
     renderApp('/transactions')
     await screen.findByRole('heading', { name: /^transactions$/i })
     await userEvent.click(screen.getAllByRole('button', { name: /sign out/i })[0])
 
-    // The token must be discarded locally regardless of the audit call's fate.
+    // The session must end locally regardless of the audit call's fate.
     await waitFor(() => {
-      expect(sessionStorage.getItem('finance_ai.dev_token')).toBeNull()
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    })
+    expect(fb.user).toBeNull()
+  })
+
+  it('re-adopts the refreshed ID token when Firebase renews it', async () => {
+    const captured: Array<string | null> = []
+    api.defaults.adapter = async (config) => {
+      captured.push(config.headers.get('Authorization') as string | null)
+      const url = String(config.url)
+      const data = url === '/api/auth/me'
+        ? TEST_USER
+        : url === '/api/auth/config'
+          ? FIREBASE_CONFIG
+          : []
+      return {
+        data,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      } as never
+    }
+    signInFirebase()
+
+    renderApp('/transactions')
+    await screen.findByRole('heading', { name: /^transactions$/i })
+
+    // The initial session used the first token.
+    expect(captured.some((header) => header === 'Bearer signed-in-token')).toBe(true)
+
+    // Firebase renews the ID token mid-session; the provider must adopt it so
+    // subsequent requests carry the fresh credential instead of 401ing an hour
+    // in.
+    fb.setToken('refreshed-token')
+
+    await waitFor(() => {
+      expect(captured.some((header) => header === 'Bearer refreshed-token')).toBe(true)
     })
   })
 })
@@ -316,7 +383,7 @@ describe('authenticated access', () => {
 describe('not found', () => {
   it('shows a 404 page for an unknown route', async () => {
     mockApi()
-    sessionStorage.setItem('finance_ai.dev_token', 'stored-token')
+    signInFirebase()
 
     renderApp('/nope')
 
@@ -348,7 +415,7 @@ describe('protected routes', () => {
   for (const [path, heading] of SCREENS) {
     it(`renders ${path} for a signed-in user`, async () => {
       const seen = mockApi()
-      sessionStorage.setItem('finance_ai.dev_token', 'stored-token')
+      signInFirebase()
 
       const view = render(
         <MemoryRouter initialEntries={[path]}>

@@ -11,6 +11,9 @@
 
 import { http } from './api';
 import type {
+  AssistantConfig,
+  AssistantRequest,
+  AssistantResponse,
   AuthConfig,
   BackupListResponse,
   Budget,
@@ -19,8 +22,9 @@ import type {
   BudgetUpdate,
   CategorizeResponse,
   DashboardResponse,
-  DevTokenResponse,
   EmiResponse,
+  FamilyGroup,
+  FamilyMember,
   FraudAlert,
   FraudAlertListResponse,
   FraudAlertUpdate,
@@ -36,6 +40,9 @@ import type {
   OcrParseResponse,
   PredictionResponse,
   PrepaymentEffect,
+  ReportRecord,
+  ReportRequest,
+  ReportTypes,
   SmsParseResponse,
   Transaction,
   TransactionCreate,
@@ -76,14 +83,6 @@ export const authApi = {
    * an expired session.
    */
   config: () => http.get<AuthConfig>('/api/auth/config', undefined, { skipAuth: true }),
-
-  /** Development-only token minting. The API returns 404 when Firebase is on. */
-  devToken: (email: string) =>
-    http.post<DevTokenResponse>(
-      '/api/auth/dev-token',
-      { subject: `dev-${email}`, email, name: 'Developer', expires_minutes: 480 },
-      { skipAuth: true },
-    ),
 
   me: () => http.get<UserResponse>('/api/auth/me'),
 
@@ -278,4 +277,48 @@ export const mlApi = {
 
 export const backupApi = {
   list: () => http.get<BackupListResponse>('/api/backups'),
+};
+
+// ---------------------------------------------------------------- reports
+
+export const reportApi = {
+  types: () => http.get<ReportTypes>('/api/reports/types'),
+
+  /**
+   * Generates a report and streams the file back.
+   *
+   * The response body is a binary download, not JSON, so it is requested as an
+   * array buffer and never `JSON.parse`d. The generation is still recorded in the
+   * history, which `list` reads back.
+   */
+  generate: (payload: ReportRequest) =>
+    http.post<ArrayBuffer>('/api/reports/generate', payload, { responseType: 'arraybuffer' }),
+
+  list: (params?: { report_type?: string; limit?: number }) =>
+    http.get<ReportRecord[]>('/api/reports', cleanQuery(params as Record<string, QueryValue>)),
+};
+
+// ---------------------------------------------------------------- assistant
+
+export const assistantApi = {
+  config: () => http.get<AssistantConfig>('/api/assistant/config'),
+
+  ask: (payload: AssistantRequest) => http.post<AssistantResponse>('/api/assistant', payload),
+};
+
+// ---------------------------------------------------------------- family
+
+export const familyApi = {
+  groups: () => http.get<FamilyGroup[]>('/api/family'),
+
+  create: (payload: { name: string; description?: string }) =>
+    http.post<FamilyGroup>('/api/family', payload),
+
+  members: (groupId: number) => http.get<FamilyMember[]>(`/api/family/${groupId}/members`),
+
+  invite: (groupId: number, email: string, canViewAll = false) =>
+    http.post<FamilyMember>(`/api/family/${groupId}/members`, {
+      email,
+      can_view_all: canViewAll,
+    }),
 };
