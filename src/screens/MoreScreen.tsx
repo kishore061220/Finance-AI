@@ -55,6 +55,12 @@ export default function MoreScreen() {
           detail="Portfolio, instalments and prepayment estimates"
           onPress={go('Loans')}
         />
+        <View style={styles.separator} />
+        <NavRow
+          label="Automatic SMS detection"
+          detail="Read bank messages as they arrive and add them to your ledger"
+          onPress={go('SmsAuto')}
+        />
       </Card>
 
       <SectionTitle>Analysis</SectionTitle>

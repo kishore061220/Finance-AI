@@ -44,6 +44,9 @@ import type {
   ReportRequest,
   ReportTypes,
   SmsParseResponse,
+  SmsIngestMessage,
+  SmsMessagePage,
+  SmsReceivePayload,
   Transaction,
   TransactionCreate,
   TransactionFilters,
@@ -204,6 +207,32 @@ export const captureApi = {
 
   predictCategory: (payload: { merchant?: string; description?: string; amount?: string }) =>
     http.post<CategorizeResponse>('/api/categorization/predict', payload),
+};
+
+// ---------------------------------------------------------------- sms ingest
+
+/**
+ * Automatic bank-SMS ingestion.
+ *
+ * `receive` is idempotent: the device sends a `client_msg_id`, and re-sending
+ * it (after a failed request or an app restart) returns the stored outcome
+ * instead of creating a second transaction. `confirm`/`reject` resolve a
+ * message that the parser was not confident enough to save on its own.
+ */
+export const smsApi = {
+  receive: (payload: SmsReceivePayload) =>
+    http.post<SmsIngestMessage>('/api/sms/messages', payload),
+
+  list: (params?: { status?: string; page?: number; page_size?: number }) =>
+    http.get<SmsMessagePage>('/api/sms/messages', cleanQuery(params)),
+
+  confirm: (id: number) => http.post<SmsIngestMessage>(`/api/sms/messages/${id}/confirm`),
+
+  reject: (id: number, reason?: string) =>
+    http.post<SmsIngestMessage>(
+      `/api/sms/messages/${id}/reject`,
+      reason ? { reason } : undefined,
+    ),
 };
 
 // ---------------------------------------------------------------- loans

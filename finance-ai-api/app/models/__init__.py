@@ -27,6 +27,7 @@ from app.models.loan import (
 )
 from app.models.notification import Notification, NotificationType
 from app.models.report import Report, ReportFormat, ReportType
+from app.models.sms_message import SmsIngestStatus, SmsMessage
 from app.models.transaction import (
     EmiType,
     Transaction,
@@ -63,6 +64,8 @@ __all__ = [
     "ReportType",
     "RiskLevel",
     "SharedExpense",
+    "SmsIngestStatus",
+    "SmsMessage",
     "StrEnum",
     "TimestampMixin",
     "Transaction",

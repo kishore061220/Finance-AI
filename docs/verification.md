@@ -12,7 +12,19 @@
 - API: `/api/auth/config` returns `project_id`; dev-token endpoint remains but is reachable only when `ALLOW_DEV_AUTH=true` and Firebase is absent.
 
 ## Real Firebase E2E
-- BLOCKED: No Firebase credentials (`FIREBASE_*` not configured), no `android/app/google-services.json`, no `VITE_FIREBASE_*` in the frontend env. Documented in `docs/firebase-setup.md`; not faked.
+- Android config: `android/app/google-services.json` for project `finance-fd3f3` /
+  package `com.financeai` is in place (gitignored) and the debug APK builds with the
+  Google Services plugin applied (`gradlew :app:assembleDebug` → BUILD SUCCESSFUL).
+- API: `FIREBASE_PROJECT_ID=finance-fd3f3` set; token verification still requires a
+  service account → real token verification is BLOCKED, not faked. Dev provider
+  active only in this unconfigured state.
+- Web: no `VITE_FIREBASE_*` env file present → real Web sign-in BLOCKED until
+  supplied.
+- Live MySQL `finance_ai` (9 users / 11 transactions / 3 budgets) read-only check
+  PASS; `users.firebase_uid` and `users.email` both UNIQUE, matching provisioning.
+- Re-verified this session: API pytest **269 passed**; ML pytest **81 passed**; Web
+  vitest **100 passed** (+ typecheck, lint clean; one first-run timeout flake passed
+  on rerun); Mobile jest **39 passed** (typecheck clean, lint 0 errors / 24 warnings).
 
 ## Shared Backend + Database (T6) - PASS
 A dedicated MySQL database (`finance_ai_e2e`) was created and migrated with the real

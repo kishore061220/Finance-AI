@@ -33,6 +33,7 @@ import MoreScreen from './src/screens/MoreScreen';
 import ReportsScreen from './src/screens/ReportsScreen';
 import FamilyScreen from './src/screens/FamilyScreen';
 import AssistantScreen from './src/screens/AssistantScreen';
+import SmsAutoScreen from './src/screens/SmsAutoScreen';
 
 const AuthStack = createNativeStackNavigator();
 const AppTab = createBottomTabNavigator();
@@ -64,6 +65,7 @@ function MoreStack() {
       <MoreStackNavigator.Screen name="Reports" component={ReportsScreen} />
       <MoreStackNavigator.Screen name="Family" component={FamilyScreen} />
       <MoreStackNavigator.Screen name="Assistant" component={AssistantScreen} />
+      <MoreStackNavigator.Screen name="SmsAuto" component={SmsAutoScreen} />
     </MoreStackNavigator.Navigator>
   );
 }

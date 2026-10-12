@@ -7,7 +7,14 @@
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert as RNAlert, FlatList, Pressable, Text, View } from 'react-native';
+import {
+  Alert as RNAlert,
+  DeviceEventEmitter,
+  FlatList,
+  Pressable,
+  Text,
+  View,
+} from 'react-native';
 
 import { Button, EmptyState, ErrorState, Field, Input, Spinner, StatusPill } from '../components/ui';
 import { useAsync, useDebounced } from '../hooks/useAsync';
@@ -62,6 +69,14 @@ export default function TransactionsScreen() {
   );
 
   const list = useAsync(() => transactionApi.list(query), [query]);
+
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      'financeai.transactions.changed',
+      () => list.reload(),
+    );
+    return () => subscription.remove();
+  }, [list.reload]);
 
   const applyFilter = useCallback(() => {
     // Any filter change invalidates the current page number; staying on page 4

@@ -28,6 +28,8 @@ PROTECTED = [
     ("GET", "/api/notifications"),
     ("GET", "/api/backups"),
     ("GET", "/api/reports"),
+    ("GET", "/api/sms/messages"),
+    ("POST", "/api/sms/messages"),
     ("POST", "/api/assistant"),
     ("POST", "/api/ml/train"),
 ]

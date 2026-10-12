@@ -2,6 +2,18 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      Automatic bank-SMS detection.
+
+      RECEIVE_SMS (not READ_SMS) is declared because the app only needs messages
+      as they arrive; it never reads the SMS inbox. Google Play restricts this
+      permission group, so the release build must file the Permissions
+      Declaration Form and select the "SMS-based financial transactions" /
+      "SMS-based money management" use case. Non-financial messages (OTP,
+      promotions) are filtered on the device and never uploaded.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -23,5 +35,22 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!--
+        Bank-SMS receiver.
+
+        Exported so the system can deliver `SMS_RECEIVED`, but locked down with
+        `android:permission="android.permission.BROADCAST_SMS"`, which only the
+        platform holds - no third-party app can spoof a broadcast to it.
+      -->
+      <receiver
+        android:name=".sms.SmsReceiver"
+        android:enabled="true"
+        android:exported="true"
+        android:permission="android.permission.BROADCAST_SMS">
+        <intent-filter android:priority="999">
+            <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+        </intent-filter>
+      </receiver>
     </application>
 </manifest>

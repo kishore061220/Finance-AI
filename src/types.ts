@@ -307,6 +307,69 @@ export interface SmsParseResponse {
   notes: string[];
 }
 
+// ---------------------------------------------------------------- sms ingest
+
+/**
+ * The lifecycle of one received SMS, mirroring the backend enum.
+ *
+ * `SAVED` and `DUPLICATE` are terminal and already committed; `PENDING_REVIEW`
+ * needs a decision from the owner; `INVALID` is a non-transaction message that
+ * was deliberately never imported; `ERROR` can be re-sent with the same
+ * `client_msg_id`.
+ */
+export type SmsIngestStatus =
+  | 'PROCESSING'
+  | 'SAVED'
+  | 'DUPLICATE'
+  | 'PENDING_REVIEW'
+  | 'INVALID'
+  | 'REJECTED'
+  | 'ERROR';
+
+/**
+ * `parsed` is the server's parser snapshot. Its values are primitives (amount is
+ * a string, dates are ISO strings) because the server stores it as JSON, so a
+ * screen must not assume numeric types in here.
+ */
+export interface SmsIngestMessage {
+  id: number;
+  user_id: number;
+  client_msg_id: string;
+  sender: string | null;
+  body: string;
+  received_at: string | null;
+  status: SmsIngestStatus;
+  parsed: Record<string, unknown>;
+  confidence: number | null;
+  rejection_reason: string | null;
+  error_message: string | null;
+  transaction_id: number | null;
+  transaction: Transaction | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface SmsMessagePage {
+  items: SmsIngestMessage[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+/**
+ * What the device sends to `POST /api/sms/messages`.
+ *
+ * `client_msg_id` is the device-generated idempotency key; re-sending it after a
+ * failed request returns the original outcome rather than writing twice.
+ */
+export interface SmsReceivePayload {
+  client_msg_id: string;
+  sender?: string | null;
+  body: string;
+  received_at?: string | null;
+}
+
 export interface OcrLineItem {
   description: string;
   amount: string;

@@ -11,7 +11,7 @@
  */
 
 import React, { useCallback, useState } from 'react';
-import { RefreshControl, Text, View } from 'react-native';
+import { DeviceEventEmitter, RefreshControl, Text, View } from 'react-native';
 
 import { useSession } from '../auth/SessionProvider';
 import { Alert, Card, ErrorState, Screen, Spinner, Stat } from '../components/ui';
@@ -27,6 +27,17 @@ export default function DashboardScreen() {
 
   const overview = useAsync(() => dashboardApi.overview(), []);
   const prediction = useAsync(() => dashboardApi.prediction(), []);
+
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      'financeai.transactions.changed',
+      () => {
+        overview.reload();
+        prediction.reload();
+      },
+    );
+    return () => subscription.remove();
+  }, [overview.reload, prediction.reload]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
