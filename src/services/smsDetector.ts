@@ -63,6 +63,8 @@ export interface SmsInboxHandlers {
 interface NativeSmsModule {
   isSupported(): Promise<boolean>;
   getPendingMessages(): Promise<IncomingSms[]>;
+  /** Persist the opt-in natively so the receiver can honour it without JS. */
+  setEnabled?(enabled: boolean): void;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }
@@ -158,6 +160,10 @@ export async function isAutoDetectEnabled(): Promise<boolean> {
 
 export async function setAutoDetectEnabled(value: boolean): Promise<void> {
   await AsyncStorage.setItem(AUTO_DETECT_KEY, value ? 'true' : 'false');
+  // Mirror the opt-in into native storage. The receiver reads this directly, so
+  // turning detection off stops it persisting messages even before the next JS
+  // launch. Best-effort: a build without the module still reacts to the JS flag.
+  nativeModule()?.setEnabled?.(value);
 }
 
 /**
@@ -279,6 +285,10 @@ export function startSmsInbox(handlers: SmsInboxHandlers = {}): () => void {
   const subscription = emitter.addListener(SMS_EVENT, (raw: unknown) => {
     void ingestSms(raw as IncomingSms, handlers);
   });
+
+  // Re-assert the persisted opt-in: covers an install where the flag was set in
+  // AsyncStorage only, before the native preference existed.
+  module.setEnabled?.(true);
 
   // Messages the receiver caught while JS was not running.
   void (async () => {

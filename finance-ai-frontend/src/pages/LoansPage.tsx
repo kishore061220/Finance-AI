@@ -21,7 +21,7 @@ import {
 import { useAsync } from '@/hooks/useAsync'
 import { loanApi } from '@/lib/endpoints'
 import { formatCompactCurrency, formatCurrency, toAmountString } from '@/lib/format'
-import type { Loan } from '@/types'
+import type { Loan, LoanDetail, UpcomingInstallment } from '@/types'
 
 interface EmiResult {
   monthly_emi: string
@@ -139,25 +139,47 @@ function EmiCalculator() {
 
 function LoanRow({ loan, onChanged }: { loan: Loan; onChanged: () => void }) {
   const [expanded, setExpanded] = useState(false)
-  const [summary, setSummary] = useState<Awaited<ReturnType<typeof loanApi.detail>>['summary'] | null>(null)
+  const [detail, setDetail] = useState<LoanDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [paying, setPaying] = useState<number | null>(null)
 
-  const toggle = async () => {
-    const next = !expanded
-    setExpanded(next)
-    if (!next || summary) return
-
+  const loadDetail = async () => {
     setBusy(true)
     setError(null)
     try {
       // Loaded on demand: the list endpoint does not include payment progress.
-      const detail = await loanApi.detail(loan.id)
-      setSummary(detail.summary)
+      setDetail(await loanApi.detail(loan.id))
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Could not load loan detail.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const toggle = async () => {
+    const next = !expanded
+    setExpanded(next)
+    if (!next || detail) return
+    await loadDetail()
+  }
+
+  const recordPayment = async (installment: UpcomingInstallment) => {
+    setPaying(installment.installment_number)
+    setError(null)
+    try {
+      await loanApi.recordPayment(loan.id, {
+        installment_number: installment.installment_number,
+        status: 'PAID',
+        paid_date: new Date().toISOString().slice(0, 10),
+      })
+      // Re-read the schedule so paid/closed state comes from the server.
+      await loadDetail()
+      onChanged()
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Could not record that payment.')
+    } finally {
+      setPaying(null)
     }
   }
 
@@ -209,28 +231,56 @@ function LoanRow({ loan, onChanged }: { loan: Loan; onChanged: () => void }) {
 
       {expanded && (
         <div className="mt-4 grid gap-2 border-t border-border-subtle pt-3 text-sm sm:grid-cols-2">
-          {busy && !summary ? (
+          {busy && !detail ? (
             <Spinner label="Loading progress" />
-          ) : summary ? (
+          ) : detail ? (
             <>
               <p className="text-muted">
                 Outstanding:{' '}
                 <span className="font-medium text-text-strong">
-                  {formatCurrency(summary.outstanding)}
+                  {formatCurrency(detail.summary.outstanding)}
                 </span>
               </p>
               <p className="text-muted">
-                Paid: {summary.installments_paid} of {summary.installments_total} installments (
-                {summary.completion_percent.toFixed(0)}%)
+                Paid: {detail.summary.installments_paid} of {detail.summary.installments_total}{' '}
+                installments ({detail.summary.completion_percent.toFixed(0)}%)
               </p>
               <p className="text-muted">
-                Next due: {summary.next_due_date ?? 'Nothing scheduled'}
+                Next due: {detail.summary.next_due_date ?? 'Nothing scheduled'}
               </p>
-              {summary.overdue_count > 0 && (
+              {detail.summary.overdue_count > 0 && (
                 <p className="font-medium text-danger">
-                  {summary.overdue_count} overdue{' '}
-                  {summary.overdue_count === 1 ? 'installment' : 'installments'}
+                  {detail.summary.overdue_count} overdue{' '}
+                  {detail.summary.overdue_count === 1 ? 'installment' : 'installments'}
                 </p>
+              )}
+
+              {detail.upcoming.length > 0 && (
+                <div className="mt-2 space-y-2 sm:col-span-2">
+                  <p className="text-xs uppercase tracking-wide text-muted">
+                    Upcoming installments
+                  </p>
+                  {detail.upcoming.map((installment) => (
+                    <div
+                      key={installment.installment_number}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border border-border-subtle px-3 py-2"
+                    >
+                      <span className="text-muted">
+                        #{installment.installment_number} · due {installment.due_date} ·{' '}
+                        {formatCurrency(installment.amount)}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={paying === installment.installment_number}
+                        disabled={paying !== null}
+                        onClick={() => void recordPayment(installment)}
+                      >
+                        Mark paid
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               )}
             </>
           ) : null}

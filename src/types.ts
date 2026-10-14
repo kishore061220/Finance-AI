@@ -607,6 +607,15 @@ export interface LoanPayment {
   transaction_id: number | null;
 }
 
+/** `POST /api/loans/{id}/payments`; the server fills defaults for whatever is absent. */
+export interface LoanPaymentCreate {
+  installment_number: number;
+  amount?: string;
+  paid_date?: string;
+  status?: 'PENDING' | 'PAID' | 'OVERDUE';
+  transaction_id?: number | null;
+}
+
 // ---------------------------------------------------------------- notifications
 
 export interface NotificationItem {

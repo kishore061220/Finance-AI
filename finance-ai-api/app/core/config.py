@@ -110,6 +110,9 @@ class Settings:
     firebase_credentials_json: str = field(
         default_factory=lambda: os.getenv("FIREBASE_CREDENTIALS_JSON", "")
     )
+    firebase_storage_bucket: str = field(
+        default_factory=lambda: os.getenv("FIREBASE_STORAGE_BUCKET", "")
+    )
 
     # --- Google Cloud Storage ---------------------------------------------
     gcs_bucket: str = field(default_factory=lambda: os.getenv("GCS_BUCKET", ""))
@@ -146,18 +149,54 @@ class Settings:
 
     # ------------------------------------------------------------------
     @property
+    def resolved_cors_origins(self) -> List[str]:
+        """Origins that are safe to hand to ``CORSMiddleware``.
+
+        A ``"*"`` origin combined with ``allow_credentials`` lets *any* website
+        make credentialed requests, which is exactly the cross-origin hole the
+        configuration is meant to avoid. The wildcard is dropped rather than
+        honoured. With credentials off, ``"*"`` is left as-is (public,
+        uncredentialed reads).
+        """
+        if self.cors_allow_credentials and "*" in self.cors_origins:
+            return [origin for origin in self.cors_origins if origin != "*"]
+        return self.cors_origins
+
+    @property
     def is_production(self) -> bool:
         return self.app_env.lower() in {"production", "prod"}
 
     @property
     def firebase_enabled(self) -> bool:
-        """True when enough configuration exists to verify Firebase ID tokens."""
-        if not self.firebase_project_id:
-            return False
+        """True when enough configuration exists to verify Firebase ID tokens.
+
+        Credentials are the decisive signal, not ``FIREBASE_PROJECT_ID``. A full
+        service-account file already carries its own project, so treating a
+        present credential as "Firebase configured" keeps the dev provider inert
+        even when the separate ``FIREBASE_PROJECT_ID`` env var was not exported.
+        If the project id really is missing, token verification fails (a closed
+        door) - which is far safer than leaving the dev token endpoint live in a
+        deployment that has real Firebase credentials.
+        """
         if self.firebase_credentials_path or self.firebase_credentials_json:
             return True
         # Application Default Credentials may also be available.
         return os.getenv("GOOGLE_APPLICATION_CREDENTIALS") is not None
+
+    @property
+    def firebase_storage_bucket_name(self) -> str:
+        """The Cloud Storage bucket Firebase Storage backups target.
+
+        Prefers an explicit ``FIREBASE_STORAGE_BUCKET``; otherwise derives the
+        conventional ``<project>.appspot.com`` default bucket when a project id
+        is known. An empty result means Firebase Storage cannot be used, so it is
+        not advertised as an available backup provider.
+        """
+        if self.firebase_storage_bucket:
+            return self.firebase_storage_bucket
+        if self.firebase_project_id:
+            return f"{self.firebase_project_id}.appspot.com"
+        return ""
 
     @property
     def dev_auth_active(self) -> bool:

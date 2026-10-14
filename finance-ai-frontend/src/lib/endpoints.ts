@@ -19,6 +19,7 @@ import type {
   FraudAlertListResponse,
   Loan,
   LoanDetail,
+  LoanPaymentCreate,
   MlStatus,
   NotificationListResponse,
   PredictionResponse,
@@ -57,29 +58,44 @@ export const authApi = {
 // ---------------------------------------------------------------- dashboard
 
 /**
- * Declared as a type alias, not an interface.
+ * Declared as type aliases, not interfaces.
  *
  * TypeScript gives a type alias an implicit index signature but not an
  * interface, so an interface here could not be passed as query params without a
  * cast at every call site.
+ *
+ * The parameter shapes mirror each route exactly: `/api/dashboard`,
+ * `/insights` take `month`/`year`; `/trends` takes `months`; only the
+ * category/merchant breakdowns take a free date range. Previously every wrapper
+ * advertised `start_date`/`end_date`, which the month-based routes silently
+ * ignored.
  */
-export type DashboardQuery = {
+export type MonthQuery = {
+  month?: number
+  year?: number
+}
+
+export type DateRangeQuery = {
   start_date?: string
   end_date?: string
 }
 
 export const dashboardApi = {
-  full: (query?: DashboardQuery): Promise<DashboardResponse> =>
+  full: (query?: MonthQuery): Promise<DashboardResponse> =>
     get<DashboardResponse>('/api/dashboard', query),
-  categories: (query?: DashboardQuery): Promise<DashboardResponse['category_breakdown']> =>
+  categories: (query?: DateRangeQuery): Promise<DashboardResponse['category_breakdown']> =>
     get('/api/dashboard/categories', query),
-  trends: (query?: DashboardQuery): Promise<DashboardResponse['monthly_trend']> =>
+  trends: (query?: { months?: number }): Promise<DashboardResponse['monthly_trend']> =>
     get('/api/dashboard/trends', query),
-  insights: (query?: DashboardQuery): Promise<DashboardResponse['insights']> =>
+  insights: (query?: MonthQuery): Promise<DashboardResponse['insights']> =>
     get('/api/dashboard/insights', query),
   prediction: (): Promise<PredictionResponse> => get<PredictionResponse>('/api/dashboard/prediction'),
-  dataHealth: (): Promise<{ transaction_count: number; earliest: string | null; latest: string | null }> =>
-    get('/api/dashboard/health'),
+  dataHealth: (): Promise<{
+    transaction_count: number
+    budget_count: number
+    transactions_this_month: number
+    spending_insights_available: boolean
+  }> => get('/api/dashboard/health'),
 }
 
 /**
@@ -156,7 +172,16 @@ export const budgetApi = {
 // ---------------------------------------------------------------- fraud
 
 export const fraudApi = {
-  alerts: (params?: { is_read?: boolean; risk_level?: string }): Promise<FraudAlertListResponse> =>
+  /**
+   * `unread_only` (not `is_read`) is the backend's filter name; the old
+   * `is_read` was silently ignored, so the "Unread only" toggle did nothing.
+   * The server accepts only LOW/MEDIUM/HIGH risk levels.
+   */
+  alerts: (params?: {
+    risk_level?: string
+    unread_only?: boolean
+    include_dismissed?: boolean
+  }): Promise<FraudAlertListResponse> =>
     get<FraudAlertListResponse>('/api/fraud/alerts', params),
   summary: (): Promise<{ total: number; unread: number }> => get('/api/fraud/summary'),
   markRead: (id: number): Promise<FraudAlert> =>
@@ -172,6 +197,8 @@ export const loanApi = {
   detail: (id: number): Promise<LoanDetail> => get<LoanDetail>(`/api/loans/${id}`),
   create: (payload: Record<string, unknown>): Promise<Loan> => post<Loan>('/api/loans', payload),
   remove: (id: number): Promise<{ deleted: boolean }> => del(`/api/loans/${id}`),
+  recordPayment: (id: number, payload: LoanPaymentCreate): Promise<unknown> =>
+    post(`/api/loans/${id}/payments`, payload),
   calculateEmi: (payload: {
     principal: string
     annual_rate: string
@@ -210,8 +237,20 @@ export const backupApi = {
   list: (): Promise<BackupListResponse> => get<BackupListResponse>('/api/backups'),
   create: (provider?: string): Promise<unknown> =>
     post('/api/backups', provider ? { provider } : {}),
-  verify: (id: number): Promise<{ verified: boolean; checksum: string }> =>
-    post(`/api/backups/${id}/verify`),
+  /**
+   * The route returns `expected_checksum`/`actual_checksum` (with a `message`
+   * when the file cannot be re-hashed, e.g. a cloud backup), not a single
+   * `checksum` field.
+   */
+  verify: (
+    id: number,
+  ): Promise<{
+    verified: boolean
+    provider?: string
+    expected_checksum?: string
+    actual_checksum?: string
+    message?: string
+  }> => post(`/api/backups/${id}/verify`),
   restorePreview: (id: number): Promise<RestoreResponse> =>
     get<RestoreResponse>(`/api/backups/${id}/restore/preview`),
   restoreApply: (id: number): Promise<RestoreResponse> =>

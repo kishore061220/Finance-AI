@@ -14,6 +14,31 @@ from app.core import config as config_module
 from app.core import security as security_module
 from app.tests.conftest import mint_token, resolve_user, seed_transaction, seed_user
 
+
+class TestCorsGuard:
+    """A credentialed API must never advertise Access-Control-Allow-Origin: *."""
+
+    def test_wildcard_is_dropped_when_credentials_are_on(self):
+        s = config_module.Settings(
+            cors_origins=["*"],
+            cors_allow_credentials=True,
+        )
+        assert s.resolved_cors_origins == []
+
+    def test_other_origins_survive_the_wildcard_removal(self):
+        s = config_module.Settings(
+            cors_origins=["http://localhost:5173", "*"],
+            cors_allow_credentials=True,
+        )
+        assert s.resolved_cors_origins == ["http://localhost:5173"]
+
+    def test_wildcard_is_kept_when_credentials_are_off(self):
+        s = config_module.Settings(
+            cors_origins=["*"],
+            cors_allow_credentials=False,
+        )
+        assert s.resolved_cors_origins == ["*"]
+
 PROTECTED = [
     ("GET", "/api/auth/me"),
     ("GET", "/api/auth/profile"),
@@ -119,6 +144,20 @@ class TestDevTokenEndpoint:
 class TestSingleAuthPath:
     """The dev provider must become inert as soon as Firebase is configured."""
 
+    def test_credentials_alone_disable_dev_auth(self):
+        """A service-account credential is enough; the project id need not be
+        exported separately. Left as-is, a deployment with credentials but no
+        FIREBASE_PROJECT_ID would keep the dev provider live."""
+        s = config_module.Settings(
+            secret_key="test-secret-key-not-for-production",
+            allow_dev_auth=True,
+            app_env="test",
+            firebase_project_id="",
+            firebase_credentials_json='{"type":"service_account"}',
+        )
+        assert s.firebase_enabled is True
+        assert s.dev_auth_active is False
+
     def test_dev_token_endpoint_disables_when_firebase_present(self, client):
         import app.routes.auth as auth_route
 
@@ -195,6 +234,33 @@ class TestUserProvisioning:
         db.expire_all()
         refreshed = db.get(User, user.id)
         assert refreshed.firebase_uid == "uid-legacy"
+
+    def test_unverified_email_cannot_claim_a_legacy_account(self, client, db):
+        """Account-takeover guard.
+
+        Linking a legacy row by email must require that Firebase has verified
+        the address. Otherwise anyone could register the victim's email in
+        Firebase (never verifying it) and be handed the victim's account.
+        """
+        from app.models.user import User
+
+        victim = seed_user(db, "victim@example.com", "Victim")
+        assert victim.firebase_uid is None
+
+        token = security_module.issue_dev_token(
+            subject="uid-attacker",
+            email="victim@example.com",
+            email_verified=False,
+        )
+        response = client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 403
+
+        db.expire_all()
+        refreshed = db.get(User, victim.id)
+        # The legacy row was not claimed by the attacker.
+        assert refreshed.firebase_uid is None
 
     def test_account_without_email_is_refused(self, client):
         """A token with no email cannot be provisioned - it has no identity key."""

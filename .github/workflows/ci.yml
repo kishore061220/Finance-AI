@@ -83,11 +83,15 @@ jobs:
       # The two packages order their 31 features differently on purpose, and the
       # scorer projects onto the order the artifact recorded. What must never drift
       # is the set of names: a rename on one side only is dropped silently at
-      # scoring time. app/tests/test_feature_parity.py asserts exactly that, and
-      # app.ml.features imports stdlib only, so it runs with this job's deps.
+      # scoring time. The parity tests live in this package's own suite
+      # (tests/test_api_feature_parity.py and tests/test_parity_with_backend.py)
+      # and import app.ml.features from the sibling backend, which is stdlib-only,
+      # so they run with this job's dependencies. They are also part of the
+      # `pytest -q` step above; this step names them explicitly so the contract
+      # cannot be lost by a change to testpaths.
       - name: Feature contract agrees with the API
         run: |
-          python -m pytest ../finance-ai-api/app/tests/test_feature_parity.py -q
+          python -m pytest tests/test_api_feature_parity.py tests/test_parity_with_backend.py -q
 
   web:
     name: Web (lint, typecheck, test, build)

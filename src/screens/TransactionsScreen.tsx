@@ -70,13 +70,19 @@ export default function TransactionsScreen() {
 
   const list = useAsync(() => transactionApi.list(query), [query]);
 
+  // `reload` is a stable useCallback (see useAsync), so binding it keeps the
+  // subscription below from being torn down and rebuilt on every render. It also
+  // satisfies react-hooks/exhaustive-deps, which tracks the identifier rather
+  // than the member expression `list.reload`.
+  const { reload: reloadList } = list;
+
   React.useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
       'financeai.transactions.changed',
-      () => list.reload(),
+      () => reloadList(),
     );
     return () => subscription.remove();
-  }, [list.reload]);
+  }, [reloadList]);
 
   const applyFilter = useCallback(() => {
     // Any filter change invalidates the current page number; staying on page 4

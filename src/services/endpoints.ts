@@ -33,6 +33,7 @@ import type {
   LoanCreate,
   LoanDetail,
   LoanPayment,
+  LoanPaymentCreate,
   LoanPortfolio,
   LoanUpdate,
   MlStatusResponse,
@@ -257,6 +258,10 @@ export const loanApi = {
 
   schedule: (id: number) => http.get<LoanPayment[]>(`/api/loans/${id}/payments`),
 
+  /** Mark an instalment paid. The route updates the stored schedule row. */
+  recordPayment: (id: number, payload: LoanPaymentCreate) =>
+    http.post<LoanPayment>(`/api/loans/${id}/payments`, payload),
+
   portfolio: () => http.get<LoanPortfolio>('/api/loans/portfolio'),
 
   /** Announced in the API, useful for a savings pitch before a loan is created. */
@@ -273,6 +278,16 @@ export const loanApi = {
 
 // ---------------------------------------------------------------- notifications
 
+/** The backend's `DeviceTokenResponse`; the route never returns a `registered` flag. */
+export interface DeviceTokenResponse {
+  id: number;
+  platform: string;
+  device_name: string | null;
+  app_version: string | null;
+  is_active: boolean;
+  last_seen_at: string | null;
+}
+
 export const notificationApi = {
   unreadCount: () => http.get<UnreadCountResponse>('/api/notifications/unread-count'),
 
@@ -288,12 +303,16 @@ export const notificationApi = {
 
   /** Registers this device for push. The token comes from the FCM SDK. */
   registerDevice: (token: string, platform: 'ANDROID' | 'IOS') =>
-    http.post<{ registered: boolean }>('/api/notifications/devices', {
+    http.post<DeviceTokenResponse>('/api/notifications/devices', {
       token,
       platform,
     }),
 
   unregisterDevice: (id: number) => http.delete<void>(`/api/notifications/devices/${id}`),
+
+  /** Stop this handset's notifications using only its FCM token, for sign-out. */
+  unregisterDeviceByToken: (token: string) =>
+    http.delete<void>('/api/notifications/devices', cleanQuery({ token })),
 };
 
 // ---------------------------------------------------------------- ml

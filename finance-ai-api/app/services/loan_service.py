@@ -71,10 +71,13 @@ def loan_summary(payments) -> Dict:
 
     for p in payments:
         total_due += to_decimal(p.amount)
-        total_principal += to_decimal(getattr(p, "principal_component", 0) or 0)
         status = getattr(p.status, "value", str(p.status))
         if status == "PAID":
             total_paid += to_decimal(p.amount)
+            # Principal is only repaid once the installment is actually paid.
+            # Accumulating it for every row (as before) counted the principal of
+            # all pending/overdue installments as already repaid.
+            total_principal += to_decimal(getattr(p, "principal_component", 0) or 0)
             paid_count += 1
         elif status == "OVERDUE":
             overdue_count += 1

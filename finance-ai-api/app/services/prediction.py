@@ -318,9 +318,9 @@ def category_forecasts(
     if history is None:
         history = monthly_expense_history(transactions)
     months_with_spend = {m.label for m in history} or set()
-    total_months = max(len(months_with_spend), 1)
 
     per_category: Dict[str, Decimal] = {}
+    category_months: Dict[str, set] = {}
     for tx in transactions:
         if not _is_expense(tx):
             continue
@@ -330,12 +330,22 @@ def category_forecasts(
         per_category[tx.category] = per_category.get(tx.category, Decimal("0")) + to_decimal(
             tx.amount
         )
+        category_months.setdefault(tx.category, set()).add(label)
 
     out = [
         {
             "category": category,
             "total": money(total),
-            "average_per_month": money(safe_div(total, Decimal(total_months), Decimal("0"))),
+            # Per *use-month* for this category, as the docstring promises, rather
+            # than the user's total active months - so a category bought three
+            # times in six months is not diluted by the months it was not used.
+            "average_per_month": money(
+                safe_div(
+                    total,
+                    Decimal(max(len(category_months.get(category, set())), 1)),
+                    Decimal("0"),
+                )
+            ),
         }
         for category, total in per_category.items()
     ]
@@ -365,10 +375,17 @@ def budget_projection(
 
     by_category: Dict[str, Decimal] = {}
     for tx in transactions:
-        if _is_expense(tx):
-            by_category[tx.category] = by_category.get(tx.category, Decimal("0")) + to_decimal(
-                tx.amount
-            )
+        if not _is_expense(tx):
+            continue
+        # Month-to-date only. The window was computed above for the elapsed-days
+        # fraction but was not applied to the rows, so every expense the user had
+        # ever recorded in a category was counted as "spent this month" and then
+        # extrapolated - inflating every projection by all prior months.
+        if tx.transaction_date < start or tx.transaction_date > end:
+            continue
+        by_category[tx.category] = by_category.get(tx.category, Decimal("0")) + to_decimal(
+            tx.amount
+        )
 
     out: List[Dict] = []
     for budget in budgets:

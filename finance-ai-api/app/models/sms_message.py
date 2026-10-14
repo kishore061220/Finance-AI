@@ -60,7 +60,17 @@ class SmsMessage(Base, TimestampMixin):
     __table_args__ = (
         # The key next to one another produce identical rows for retries.
         UniqueConstraint("user_id", "client_msg_id", name="uq_sms_messages_user_client"),
-        # Repeated identical bodies for the same user are the same SMS.
+        # Repeated identical bodies for the same user are treated as the same SMS.
+        # This is a deliberate anti-double-ingest backstop for the case where the
+        # same message is redelivered under a different client_msg_id (e.g. the
+        # OS message id changed on reboot). It cannot distinguish that from two
+        # genuinely identical bank SMS (same sender, same amount, no reference
+        # number) sent at different times, and merges them. A compound key that
+        # adds received_at would separate those two cases only when the client
+        # always supplies the SMS timestamp, which it is not required to do, and
+        # would let a redelivery without a timestamp create a second transaction.
+        # The safe default is therefore to keep the body-only key: a merged
+        # duplicate is recoverable, an auto-created duplicate transaction is not.
         UniqueConstraint("user_id", "body_hash", name="uq_sms_messages_user_body_hash"),
         Index("ix_sms_messages_user_status", "user_id", "status", "created_at"),
     )

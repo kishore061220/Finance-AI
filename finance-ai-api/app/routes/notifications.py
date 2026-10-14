@@ -174,6 +174,37 @@ def mark_all_read(
 
 
 @router.delete(
+    "/devices",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Unregister this handset by its FCM token",
+)
+def unregister_device_by_token(
+    token: str = Query(..., min_length=1, description="The device's FCM token"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Deactivate the caller's own device identified by its FCM token.
+
+    Sign-out only has the token in hand (the list endpoint deliberately omits
+    it), so this lets the client stop its own notifications without first
+    resolving a device id. A token belonging to another account is a 404.
+
+    Declared before ``DELETE /{notification_id}``: that catch-all would
+    otherwise match the single-segment path ``/devices`` and try to parse
+    ``devices`` as an integer notification id.
+    """
+    device = db.execute(
+        select(DeviceToken).where(
+            DeviceToken.token == token, DeviceToken.user_id == current_user.id
+        )
+    ).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    device.is_active = False
+    db.commit()
+
+
+@router.delete(
     "/{notification_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete"
 )
 def delete_notification(

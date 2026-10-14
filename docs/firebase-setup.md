@@ -61,13 +61,14 @@ file exists, and `gradlew :app:assembleDebug` succeeds with Firebase enabled.
 - If the file is missing, the app cannot initialize Firebase and will show a notice that sign-in is not available (no developer fallback).
 - The session subscribes to `onIdTokenChanged` (Firebase Auth) so refreshed tokens are adopted without a sign-out/in.
 - Project consistency: `firebaseProjectId()` reads the configured project; if `config.project_id` differs, the UI warns.
+- Push (FCM): after a successful device registration the client subscribes to `onTokenRefresh` and re-registers a rotated token; sign-out calls `DELETE /api/notifications/devices?token=...` while the auth token is still valid, so the handset does not keep receiving the previous account's alerts. The server deactivates a token that FCM reports as permanently unregistered.
 
 ## Verification (no fabrication)
 
-1. API: `cd finance-ai-api && .venv\Scripts\python.exe -m pytest -q` → 269 passed.
+1. API: `cd finance-ai-api && .venv\Scripts\python.exe -m pytest -q` → 306 passed.
 2. ML: `cd finance-ai-ml && ..\finance-ai-api\.venv\Scripts\python.exe -m pytest -q` → 81 passed.
-3. Web: `cd finance-ai-frontend && npx vitest run` → 100 passed; `npm run typecheck`, `npm run lint` clean.
-4. Mobile: `cd C:\Projects\Finance-AI && npx jest --no-coverage` → 39 passed; `npm run typecheck` clean, `npm run lint` produces only style warnings.
+3. Web: `cd finance-ai-frontend && npx vitest run` → 104 passed; `npm run typecheck`, `npm run lint` clean.
+4. Mobile: `cd C:\Projects\Finance-AI && npx jest --no-coverage` → 60 passed; `npm run typecheck` clean, `npm run lint` produces only style warnings.
 
 To test real Firebase end-to-end (BLOCKED if credentials missing):
 - Ensure the API runs with Firebase configured and `ALLOW_DEV_AUTH=false`. Do not point at the live `finance_ai` database for ad-hoc destructive E2E writes; use the controlled P2 path with `finance_ai_e2e`.
@@ -82,7 +83,7 @@ Do not invent tokens or mark Firebase as verified without running these steps ag
 Web (`finance-ai-frontend/.env.local`, not committed): the six `VITE_FIREBASE_*`
 values from the console Web app config for project `finance-fd3f3`
 (`VITE_FIREBASE_PROJECT_ID=finance-fd3f3`). Until this file exists the login screen
-shows the setup notice (100-unit-test path still passes).
+shows the setup notice (104-unit-test path still passes).
 
 API (`finance-ai-api/.env`): download the service-account JSON from Console →
 Project settings → Service accounts → Firebase Admin SDK → "Generate new private

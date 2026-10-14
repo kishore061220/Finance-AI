@@ -104,7 +104,7 @@ def train_model(
             },
         )
 
-    report = trainer.train(transactions, labels, test_size=0.2)
+    report = trainer.train(transactions, labels, test_size=test_size)
     if report.status != "trained":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -164,7 +164,18 @@ def score(
     """
     from datetime import datetime
 
-    when = datetime.fromisoformat(transaction_date) if transaction_date else datetime.utcnow()
+    if transaction_date:
+        try:
+            when = datetime.fromisoformat(transaction_date)
+        except ValueError as exc:
+            # A malformed date is a client error, not a 500. The neighbouring
+            # parsers (sms_parser, categorization) already do this.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="transaction_date must be an ISO-8601 date or datetime.",
+            ) from exc
+    else:
+        when = datetime.utcnow()
 
     history = list(
         db.execute(

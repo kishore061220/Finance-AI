@@ -17,6 +17,7 @@ import {
   ingestSms,
   isSmsAutoDetectAvailable,
   looksLikeBankTransaction,
+  setAutoDetectEnabled,
   smsQueueSize,
   startSmsInbox,
   type IncomingSms,
@@ -65,6 +66,7 @@ beforeEach(async () => {
   NativeModules.SmsReceiver = {
     isSupported: jest.fn(async () => true),
     getPendingMessages: jest.fn(async () => []),
+    setEnabled: jest.fn(),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
   };
@@ -186,6 +188,16 @@ describe('flushSmsQueue', () => {
   });
 });
 
+describe('setAutoDetectEnabled', () => {
+  it('mirrors the opt-in to native so the receiver honours it without JS', async () => {
+    await setAutoDetectEnabled(false);
+    expect((NativeModules.SmsReceiver.setEnabled as jest.Mock).mock.calls.at(-1)).toEqual([false]);
+
+    await setAutoDetectEnabled(true);
+    expect((NativeModules.SmsReceiver.setEnabled as jest.Mock).mock.calls.at(-1)).toEqual([true]);
+  });
+});
+
 describe('startSmsInbox', () => {
   it('is a no-op without the native module', () => {
     delete (NativeModules as Record<string, unknown>).SmsReceiver;
@@ -193,6 +205,13 @@ describe('startSmsInbox', () => {
     expect(typeof stop).toBe('function');
     expect(() => stop()).not.toThrow();
     expect(captured).toHaveLength(0);
+  });
+
+  it('re-asserts the persisted opt-in to native when it starts', () => {
+    (NativeModules.SmsReceiver.setEnabled as jest.Mock).mockClear();
+    const stop = startSmsInbox();
+    expect(NativeModules.SmsReceiver.setEnabled).toHaveBeenCalledWith(true);
+    stop();
   });
 
   it('uploads a message delivered by the native emitter and stops on unsubscribe', async () => {

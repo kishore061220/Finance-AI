@@ -299,9 +299,24 @@ export interface LoanSummary {
   next_due_date: string | null
 }
 
+export interface UpcomingInstallment {
+  installment_number: number
+  due_date: string
+  amount: string
+  status: string
+}
+
+export interface LoanPaymentCreate {
+  installment_number: number
+  amount?: string
+  paid_date?: string
+  status?: 'PENDING' | 'PAID' | 'OVERDUE'
+  transaction_id?: number | null
+}
+
 export interface LoanDetail extends Loan {
   summary: LoanSummary
-  upcoming: Record<string, unknown>[]
+  upcoming: UpcomingInstallment[]
 }
 
 export interface FamilyGroup {

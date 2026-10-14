@@ -15,7 +15,7 @@
  */
 
 import { PermissionsAndroid, Platform } from 'react-native';
-import { firebaseAuth } from './firebase';
+import { firebaseAuth, isFirebaseAvailable } from './firebase';
 import { notificationApi } from './endpoints';
 
 /** The messaging module, loaded lazily. */
@@ -28,6 +28,23 @@ export interface PushOutcome {
 
 /** The platform label the API stores, so it can choose the right payload. */
 export const pushPlatform = Platform.OS === 'ios' ? 'IOS' : 'ANDROID';
+
+/**
+ * At most one token-refresh subscription for the process.
+ *
+ * `ensurePermission` is reachable from a screen that can be opened repeatedly,
+ * and RNFirebase does not de-duplicate listeners, so a guard is kept here
+ * rather than at the call site.
+ */
+let tokenRefreshUnsubscribe: (() => void) | null = null;
+
+function loadMessaging(): MessagingModule | null {
+  try {
+    return require('@react-native-firebase/messaging') as MessagingModule;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Asks for the Android 13+ notification permission.
@@ -150,24 +167,80 @@ export const pushService = {
   },
 
   /**
-   * Background event handler.
+   * Re-register the device when FCM rotates its token.
    *
-   * Registered from `index.js` because a handler registered later will not run for
-   * a notification that launched the app from terminated. Only logs the receipt:
-   * acting on it here would race the React tree, which is not mounted yet.
+   * FCM can retire a token at any time; without this the stored token goes
+   * stale and delivery stops silently while the app still reports success.
+   * Idempotent - repeated calls reuse the one subscription. Returns an
+   * unsubscribe function, best-effort when Firebase is absent.
    */
-  async registerBackgroundHandler(): Promise<() => void> {
-    const auth = await firebaseAuth();
-    if (!auth) return () => undefined;
+  listenForTokenRefresh(): () => void {
+    if (tokenRefreshUnsubscribe) return tokenRefreshUnsubscribe;
+    if (!isFirebaseAvailable()) return () => {};
+
+    const messaging = loadMessaging();
+    if (!messaging) return () => {};
 
     try {
+      const unsubscribe = messaging.default().onTokenRefresh((token: string) => {
+        if (!token) return;
+        void notificationApi.registerDevice(token, pushPlatform).catch(() => {
+          // A failed re-registration is retried on the next launch.
+        });
+      });
+      tokenRefreshUnsubscribe = () => {
+        unsubscribe();
+        tokenRefreshUnsubscribe = null;
+      };
+      return tokenRefreshUnsubscribe;
+    } catch {
+      return () => {};
+    }
+  },
+
+  /**
+   * Stop this handset's notifications, for sign-out.
+   *
+   * Best effort and never throws: signing out must not be blocked by push
+   * teardown. Called while the auth token is still valid, so the request is
+   * authenticated.
+   */
+  async unregisterCurrentDevice(): Promise<void> {
+    if (!isFirebaseAvailable()) return;
+    const messaging = loadMessaging();
+    if (!messaging) return;
+    try {
+      const token = await messaging.default().getToken();
+      if (token) await notificationApi.unregisterDeviceByToken(token);
+    } catch {
+      // Not registered, no permission, or offline. Nothing to undo.
+    }
+  },
+
+  /**
+   * Registers the handler for messages that arrive while the app is not in the
+   * foreground (background or terminated).
+   *
+   * Must be called once from `index.js`, at module scope and *before* the root
+   * component is registered: RNFirebase only runs a handler that was registered
+   * during the headless startup, so registering it later misses a notification
+   * that launched the app from a terminated state. Uses
+   * `setBackgroundMessageHandler` - `onMessage` only fires in the foreground,
+   * and the in-app notification screen already renders those.
+   *
+   * Best-effort and synchronous: a build without Firebase, or without the
+   * messaging module, is a no-op.
+   */
+  registerBackgroundHandler(): void {
+    if (Platform.OS !== 'android' || !isFirebaseAvailable()) return;
+    try {
       const messaging = require('@react-native-firebase/messaging') as MessagingModule;
-      return messaging.default().onMessage(() => {
-        // Foreground messages are rendered by the notification screen instead, so
-        // showing a system alert here would duplicate them.
+      messaging.default().setBackgroundMessageHandler(async () => {
+        // Runs in a headless context with no mounted React tree; there is nothing
+        // to update here. The notification payload is rendered by the OS.
       });
     } catch {
-      return () => undefined;
+      // No Firebase project or messaging module in this build.
     }
   },
 };

@@ -8,35 +8,44 @@ T8 ML training/eval + real inference, T9 full verification, T10 PASS/FAIL/PARTIA
 BLOCKED report. Do not repeat T1-T5 and do not fabricate Firebase/ML results.
 
 ## T1-T5 - PASS (prior work, re-verified)
-- Web: Firebase-only session via `onIdTokenChanged`, dev-token path removed, `project_id` consistency check; tests updated with `firebaseMock`; 100 passed; typecheck + lint clean.
-- Mobile: Firebase-only via `onIdTokenChanged`, dev-token path and `DEV_TOKEN_KEY` removed, project consistency; mocks/tests updated; 39 passed; typecheck clean, lint 24 warnings / 0 errors.
-- API: `/api/auth/config` returns `project_id`; backend auth unchanged; 269 tests pass.
-- Docs: `docs/firebase-setup.md`, `docs/verification.md`, README/.env.example updated.
+- Web: Firebase-only session via `onIdTokenChanged`, dev-token path removed, `project_id` consistency check; tests updated with `firebaseMock`; 104 passed; typecheck + lint + build clean.
+- Mobile: Firebase-only via `onIdTokenChanged`, dev-token path and `DEV_TOKEN_KEY` removed, project consistency; mocks/tests updated; 60 passed; typecheck clean, lint 24 warnings / 0 errors.
+- API: `/api/auth/config` returns `project_id`; backend auth unchanged; 306 tests pass (includes the audit fixes in [completion-audit.md](completion-audit.md)).
+- Docs: `docs/firebase-setup.md`, `docs/verification.md`, `docs/completion-audit.md`, README/.env.example updated.
 
 ## Test Baselines (verified this session)
-- API: 269 passed
-- ML: 81 passed
-- Web: 100 passed (5 files)
-- Mobile: 39 passed (4 suites)
+- API: 306 passed
+- ML: 81 passed (parity subset 10 passed)
+- Web: 104 passed (5 files)
+- Mobile: 60 passed (5 suites)
+- Android: `:app:assembleDebug` BUILD SUCCESSFUL (~19.8 MB APK); `bundle:android` exit 0
 
 ## T6 (shared backend + database) - PASS
-- Created dedicated MySQL database `finance_ai_e2e` and applied the full Alembic chain (`0001 -> 0006`). The live `finance_ai` database was not modified.
+- Created dedicated MySQL database `finance_ai_e2e` and applied the full Alembic chain (`0001 -> 0007`). The live `finance_ai` database was not modified.
 - Ran the real FastAPI app against it and drove it through a "web" session and a "mobile" session for the same user, plus a second user for isolation.
 - Result: 20/20 checks passed - cross-client visibility both directions, persistence across a web re-login, per-user isolation, direct MySQL row confirmation, and the T7 feature endpoints (reports/assistant/family).
 - Script: `finance-ai-api/scripts/e2e_shared_backend.py` (hard guard: refuses any target that is not the dedicated `*_e2e` database).
 
 ## T7 (feature UI) - PASS
-- Web: `ReportsPage`, `FamilyPage`, `AssistantPage` implemented and wired into routes/nav; endpoint/type fixes for reports + assistant + family; typecheck + lint clean; 100 tests pass.
-- Mobile: `ReportsScreen`, `FamilyScreen`, `AssistantScreen` implemented, wired into `MoreStackNavigator` and the `More` hub; typed APIs/wire types added; typecheck clean; lint 0 errors; 39 tests pass.
+- Web: `ReportsPage`, `FamilyPage`, `AssistantPage` implemented and wired into routes/nav; endpoint/type fixes for reports + assistant + family; typecheck + lint clean; 104 tests pass.
+- Mobile: `ReportsScreen`, `FamilyScreen`, `AssistantScreen` implemented, wired into `MoreStackNavigator` and the `More` hub; typed APIs/wire types added; typecheck clean; lint 0 errors; 60 tests pass.
 
 ## T8 (ML) - PASS
 - Artifacts present (`fraud_model.json` + `.pkl`): random_forest `roc_auc 0.7577`, `avg_precision 0.0866`, `precision 0.0213`, `recall 0.3333`, `f1 0.0401`, `thr 0.5`, `rows_used 282982`.
 - API loads the model (`model_loaded`, `scoring_mode=combined`) and combines it with the rule engine. ML suite (training, comparison, dataset, parity) 81 passed.
 
 ## T9 (end-to-end verification) - PASS
-- All unit suites green; Web typecheck+lint clean; Mobile typecheck clean and lint 0 errors.
-- Cross-client shared backend + MySQL proven by the 20/20 E2E.
+- All unit suites green; Web typecheck+lint+build clean; Mobile typecheck clean and lint 0 errors; Android `assembleDebug` and `bundle:android` succeeded.
+- Cross-client shared backend + MySQL proven by the 20/20 E2E above.
+- Alembic chain proven reversible on a disposable DB (`upgrade head` -> `downgrade base` -> `upgrade head`; single head 0007).
 - Real Firebase E2E remains BLOCKED by absent credentials and is not simulated.
+
+## Deferred functional gaps + second security pass - PASS
+- **Loan `record_payment` UI** added to Web (`LoansPage`) and Mobile (`LoansScreen`): each loan's `upcoming` installments can be marked paid, refreshing from the server. API route + tests already existed.
+- **FCM lifecycle**: server deactivates permanently dead tokens on send (`invalid_tokens`); mobile subscribes to `onTokenRefresh` and re-registers; sign-out calls `DELETE /api/notifications/devices?token=...` to unregister the handset while its token is still valid.
+- **CORS**: `Settings.resolved_cors_origins` strips `*` when credentials are enabled; guard test added.
+- **Family**: non-member read boundary pinned by regression tests; `can_view_all` remains intentionally inert (documented).
+- **SMS body-hash dedup**: kept by design (it suppresses dual-SIM duplicates); the trade-off is documented in `sms_message.py` rather than changed.
 
 ## T10 (Final) - COMPLETED
 Consolidated report produced (`docs/verification.md` + this document). No commits or pushes were made.

@@ -23,6 +23,10 @@ from app.models.fraud_alert import DetectionLayer, FraudAlert, RiskLevel
 from app.models.transaction import Transaction
 from app.services.fraud_detection import analyze_with_baseline
 
+# Combined score at or above which a transaction is flagged. Mirrors the MEDIUM
+# boundary in ``trainer._level``.
+FLAG_THRESHOLD = 30
+
 
 def user_history(
     db: Session, user_id: int, exclude_id: Optional[int] = None
@@ -83,18 +87,30 @@ def apply_analysis(transaction: Transaction, history: list[Transaction], db: Ses
     result = score_transaction(transaction, history, db)
     rule = result["rule"]
     ml = result["ml"]
-    combined = ml.get("combined_score", rule["risk_score"])
+    rule_score = rule["risk_score"]
+    combined = ml.get("combined_score", rule_score)
 
-    transaction.fraud_score = combined
-    transaction.is_flagged = combined >= 30
+    # The rule engine is the deterministic verdict and must never be silently
+    # overridden by the model. The weighted blend can dip below the rule score
+    # when the model is unimpressed, which for a rule score just over the
+    # threshold dropped a rules-detected anomaly to ``is_flagged = False`` and
+    # produced no alert at all. The rule score is therefore a floor.
+    effective_score = max(combined, rule_score)
+    transaction.fraud_score = effective_score
+    transaction.is_flagged = effective_score >= FLAG_THRESHOLD
 
     alert_payload = None
     if transaction.is_flagged:
-        level = ml.get("risk_level", rule["risk_level"])
+        # Keep the level consistent with the score that decided the verdict:
+        # whichever signal is higher also supplies the severity.
+        if combined >= rule_score:
+            level = ml.get("risk_level", rule["risk_level"])
+        else:
+            level = rule["risk_level"]
         alert_payload = FraudAlert(
             user_id=transaction.user_id,
             transaction_id=None,
-            risk_score=combined,
+            risk_score=effective_score,
             risk_level=RiskLevel(level),
             is_fraud=level == "HIGH",
             detection_layer=(
@@ -105,7 +121,7 @@ def apply_analysis(transaction: Transaction, history: list[Transaction], db: Ses
             merchant_snapshot=transaction.merchant,
             category_snapshot=transaction.category,
         )
-    return {"combined_score": combined, "alert": alert_payload, "ml": ml}
+    return {"combined_score": effective_score, "alert": alert_payload, "ml": ml}
 
 
 __all__ = [

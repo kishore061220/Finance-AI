@@ -74,7 +74,7 @@ def _download_drive(remote_path: str) -> bytes:
 def _download_firebase_storage(remote_path: str) -> bytes:
     from firebase_admin import storage
 
-    return storage.bucket().blob(remote_path).download_as_bytes()
+    return storage.bucket(settings.firebase_storage_bucket_name).blob(remote_path).download_as_bytes()
 
 
 def _download_local(remote_path: str) -> bytes:
@@ -650,7 +650,11 @@ def fraud_alert_key(row) -> Tuple:
 
 
 def fraud_alert_key_from_row(row: Dict, transaction_id: int) -> Tuple:
-    return (transaction_id, int(row.get("risk_score") or 0), row.get("detection_layer"))
+    return (
+        transaction_id,
+        int(row.get("risk_score") or 0),
+        row.get("detection_layer") or "RULES",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -835,20 +839,36 @@ def _apply_fraud_alerts(
 ) -> None:
     from app.models.fraud_alert import FraudAlert
 
+    # Re-read the live alerts so a second restore of the same backup is a true
+    # no-op, matching the plan and the module's documented idempotency. Without
+    # this, every restore re-inserted every alert (the table has no unique
+    # constraint to stop it) while the preview reported them as skipped.
+    existing = {
+        fraud_alert_key(row)
+        for row in db.execute(
+            select(FraudAlert).where(FraudAlert.user_id == user_id)
+        ).scalars()
+    }
+
     for index, row in enumerate(_rows(payload, "fraud_alerts")):
         transaction = transactions.get(row.get("transaction_id"))
         if transaction is None:
             # Either the alert was unattached, or its transaction is not being
             # restored. Skip rather than store an alert with a dangling link.
             continue
+        detection_layer = row.get("detection_layer") or "RULES"
+        key = (transaction.id, int(row.get("risk_score") or 0), detection_layer)
+        if key in existing:
+            continue
+        existing.add(key)
         db.add(
             FraudAlert(
                 user_id=user_id,
                 transaction_id=transaction.id,
-                risk_score=int(row.get("risk_score") or 0),
+                risk_score=key[1],
                 risk_level=row.get("risk_level") or "LOW",
                 is_fraud=bool(row.get("is_fraud")),
-                detection_layer=row.get("detection_layer") or "RULES",
+                detection_layer=detection_layer,
                 reasons=row.get("reasons"),
                 amount_snapshot=transaction.amount,
                 merchant_snapshot=transaction.merchant,

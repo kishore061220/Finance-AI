@@ -534,6 +534,51 @@ class TestApplyAndIdempotency:
         assert {a.risk_score for a in restored_alerts} == {a.risk_score for a in alerts}
         assert original_tx_ids  # the original scoring did produce links
 
+    def test_restoring_twice_does_not_duplicate_fraud_alerts(
+        self, client, auth, db, alice, backup_dir
+    ):
+        """A second restore of the same backup is a no-op for alerts too.
+
+        The plan already counted duplicate alerts as skips, but the apply phase
+        re-inserted them (the table has no unique constraint), so a repeat
+        restore silently duplicated every alert while the preview said otherwise.
+        """
+        from app.models.fraud_alert import FraudAlert
+
+        created = client.post(
+            "/api/transactions",
+            headers=auth,
+            json={
+                "transaction_type": "expense",
+                "amount": "250000.00",
+                "category": "Shopping",
+                "merchant": "Luxury Store",
+                "transaction_date": "2026-01-15T02:30:00",
+            },
+        )
+        assert created.status_code == 201
+        backup = make_backup(client, auth)
+
+        db.query(FraudAlert).filter(FraudAlert.user_id == alice).delete()
+        db.query(Transaction).filter(Transaction.user_id == alice).delete()
+        db.commit()
+
+        first = client.post(
+            f"/api/backups/{backup['id']}/restore", headers=auth, json={"confirm": True}
+        )
+        assert first.status_code == 200
+        db.expire_all()
+        after_first = db.query(FraudAlert).filter(FraudAlert.user_id == alice).count()
+        assert after_first >= 1
+
+        second = client.post(
+            f"/api/backups/{backup['id']}/restore", headers=auth, json={"confirm": True}
+        )
+        assert second.status_code == 200
+        db.expire_all()
+        after_second = db.query(FraudAlert).filter(FraudAlert.user_id == alice).count()
+        assert after_second == after_first
+
 
 class TestConflicts:
     def test_matching_key_with_different_details_is_reported_not_overwritten(

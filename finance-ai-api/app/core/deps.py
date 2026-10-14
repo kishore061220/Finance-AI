@@ -63,11 +63,26 @@ def get_current_user(
     ).scalar_one_or_none()
 
     if user is None and identity.email:
-        # Link a pre-existing legacy account on first Firebase sign-in.
-        user = db.execute(
+        # Link a pre-existing legacy account on first Firebase sign-in. The link
+        # is keyed on the email claim, so it may only happen when Firebase has
+        # *verified* that the token holder controls that address. An unverified
+        # email proves nothing: without this check, anyone could register
+        # victim@example.com in Firebase (never clicking the verification link)
+        # and be handed the victim's existing Finance-AI account.
+        existing = db.execute(
             select(User).where(User.email == identity.email)
         ).scalar_one_or_none()
-        if user is not None:
+        if existing is not None:
+            if not identity.email_verified:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "An account already exists for this email address, but "
+                        "the email on this token is not verified. Verify the "
+                        "email with Firebase and sign in again."
+                    ),
+                )
+            user = existing
             user.firebase_uid = identity.subject
             user.email_verified = user.email_verified or identity.email_verified
             if identity.display_name and not user.name:

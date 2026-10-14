@@ -232,8 +232,8 @@ export const http = {
     request<T>({ method: 'PUT', url, data }, options),
   patch: <T>(url: string, data?: unknown, options?: RequestOptions) =>
     request<T>({ method: 'PATCH', url, data }, options),
-  delete: <T>(url: string, options?: RequestOptions) =>
-    request<T>({ method: 'DELETE', url }, options),
+  delete: <T>(url: string, params?: Record<string, unknown>, options?: RequestOptions) =>
+    request<T>({ method: 'DELETE', url, params }, options),
 };
 
 /** Narrowing helper for `catch` blocks. */

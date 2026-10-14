@@ -171,7 +171,7 @@ describe('restore', () => {
 describe('fraud filters', () => {
   it('omits empty level filter', async () => {
     respond({ items: [], total: 0, unread: 0, by_level: {} })
-    await fraudApi.alerts({ risk_level: '', is_read: undefined })
+    await fraudApi.alerts({ risk_level: '', unread_only: undefined })
     expect(captured.params).toEqual({})
   })
 
@@ -180,6 +180,41 @@ describe('fraud filters', () => {
     await fraudApi.alerts({ risk_level: 'HIGH' })
     expect(captured.params).toEqual({ risk_level: 'HIGH' })
   })
+
+  it('sends unread_only, the parameter the backend actually filters on', async () => {
+    respond({ items: [], total: 0, unread: 0, by_level: {} })
+    await fraudApi.alerts({ unread_only: true })
+    expect(captured.params).toEqual({ unread_only: true })
+    // The old `is_read` parameter was silently ignored by FastAPI, so the
+    // "Unread only" toggle never filtered anything. Guard against regression.
+    expect(captured.params).not.toHaveProperty('is_read')
+  })
+})
+
+describe('backup verify', () => {
+  it('posts to the verify route and exposes the real response fields', async () => {
+    respond({ verified: true, provider: 'LOCAL', expected_checksum: 'abc', actual_checksum: 'abc' })
+    const result = await backupApi.verify(4)
+
+    expect(captured.method).toBe('POST')
+    expect(captured.url).toBe('/api/backups/4/verify')
+    // The route returns expected_checksum/actual_checksum, not a single
+    // `checksum`; the old type read an undefined field on mismatch.
+    expect(result.expected_checksum).toBe('abc')
+    expect(result.actual_checksum).toBe('abc')
+  })
+})
+
+describe('dashboard query params', () => {
+  it('matches each route: months for trends, month/year for the full dashboard', async () => {
+    respond([])
+    await dashboardApi.trends({ months: 6 })
+    expect(captured.params).toEqual({ months: 6 })
+
+    respond({})
+    await dashboardApi.full({ month: 4, year: 2026 })
+    expect(captured.params).toEqual({ month: 4, year: 2026 })
+  })
 })
 
 describe('loan detail', () => {
@@ -187,6 +222,24 @@ describe('loan detail', () => {
     respond({})
     await loanApi.detail(7)
     expect(captured.url).toBe('/api/loans/7')
+  })
+})
+
+describe('loan payments', () => {
+  it('posts a repayment against the installment schedule', async () => {
+    respond({})
+    await loanApi.recordPayment(7, {
+      installment_number: 4,
+      status: 'PAID',
+      paid_date: '2026-10-12',
+    })
+    expect(captured.method?.toLowerCase()).toBe('post')
+    expect(captured.url).toBe('/api/loans/7/payments')
+    expect(captured.data).toEqual({
+      installment_number: 4,
+      status: 'PAID',
+      paid_date: '2026-10-12',
+    })
   })
 })
 

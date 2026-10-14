@@ -121,11 +121,38 @@ def _clean_database(session_factory) -> None:
         connection.close()
 
 
+class _NonDisposingEngine:
+    """Delegate to the test engine but swallow ``dispose``.
+
+    ``main.engine`` is used by ``/health`` and the lifespan probe, so pointing
+    it at the in-memory SQLite engine lets those meta tests do a real round trip
+    without a MySQL server or ``DB_USER`` (a CI runner has neither). The lifespan
+    disposes ``main.engine`` on shutdown, though, and the SQLite engine is
+    session-scoped and shared by every test - letting one client tear it down
+    would break the rest of the suite. ``dispose`` is therefore a no-op; the
+    engine fixture owns its own teardown.
+    """
+
+    def __init__(self, engine):
+        self._engine = engine
+
+    def connect(self):
+        return self._engine.connect()
+
+    def dispose(self):
+        return None
+
+    def __getattr__(self, name):
+        return getattr(self._engine, name)
+
+
 @pytest.fixture()
 def client(engine, session_factory):
     """TestClient wired to the in-memory database."""
     import main as main_module
 
+    original_engine = main_module.engine
+    main_module.engine = _NonDisposingEngine(engine)
     main_module.settings = settings
 
     def override_get_db():
@@ -136,9 +163,12 @@ def client(engine, session_factory):
             connection.close()
 
     main_module.app.dependency_overrides[get_db] = override_get_db
-    with TestClient(main_module.app, raise_server_exceptions=False) as test_client:
-        yield test_client
-    main_module.app.dependency_overrides.clear()
+    try:
+        with TestClient(main_module.app, raise_server_exceptions=False) as test_client:
+            yield test_client
+    finally:
+        main_module.app.dependency_overrides.clear()
+        main_module.engine = original_engine
 
 
 def mint_token(subject: str, email: str, name: str = "Test User") -> str:

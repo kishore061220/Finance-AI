@@ -5,6 +5,7 @@
 | [architecture.md](architecture.md) | Component map, API layering, auth flow, fraud pipeline, backups |
 | [api-contract.md](api-contract.md) | Generated endpoint inventory and the contracts clients depend on |
 | [verification.md](verification.md) | Every command run, what it covers, and what is still unverified |
+| [completion-audit.md](completion-audit.md) | Audit findings, fixes with regression tests, and documented deferrals |
 | [project-report.md](project-report.md) | Final handoff report |
 
 Component-level READMEs:

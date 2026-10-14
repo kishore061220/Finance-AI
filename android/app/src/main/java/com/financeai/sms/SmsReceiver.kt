@@ -24,6 +24,11 @@ class SmsReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
+    // Honour the user's opt-in even when no JS runtime is alive: with detection
+    // off, nothing is delivered to JS and nothing is written to the on-device
+    // queue. This is what makes "turning it off stops reading messages" true.
+    if (!SmsReceiverModule.isEnabled(context)) return
+
     val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
 
     // A long SMS arrives as several PDUs that share one originating address.

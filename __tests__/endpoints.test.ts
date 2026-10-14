@@ -123,6 +123,21 @@ describe('loans', () => {
     expect(captured[0].url).toBe('/api/loans/3/prepayment');
     expect(captured[0].params).toEqual({ amount: '50000' });
   });
+
+  it('records a payment against the instalment schedule', async () => {
+    await loanApi.recordPayment(3, {
+      installment_number: 4,
+      status: 'PAID',
+      paid_date: '2026-10-12',
+    });
+
+    expect(captured[0].url).toBe('/api/loans/3/payments');
+    expect(body()).toEqual({
+      installment_number: 4,
+      status: 'PAID',
+      paid_date: '2026-10-12',
+    });
+  });
 });
 
 describe('dashboard', () => {
@@ -158,6 +173,14 @@ describe('notifications', () => {
 
     expect(captured[0].url).toBe('/api/notifications/devices');
     expect(body()).toEqual({ token: 'fcm-token', platform: 'ANDROID' });
+  });
+
+  it('unregisters this handset by its token on sign-out', async () => {
+    await notificationApi.unregisterDeviceByToken('fcm-token');
+
+    expect(captured[0].url).toBe('/api/notifications/devices');
+    expect(String(captured[0].method).toUpperCase()).toBe('DELETE');
+    expect(captured[0].params).toEqual({ token: 'fcm-token' });
   });
 });
 

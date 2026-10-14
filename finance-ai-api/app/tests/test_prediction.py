@@ -420,6 +420,32 @@ class TestCategoryForecasts:
         assert forecasts[0]["total"] == Decimal("300.00")
         assert forecasts[0]["average_per_month"] == Decimal("150.00")
 
+    def test_average_uses_only_months_the_category_was_used(self, db, user_id):
+        # Food bought once; Rent every month for three months. Food's average
+        # must be its per-use-month figure, not diluted by the months Rent (not
+        # Food) was active - which is what the docstring promises.
+        seed_transaction(
+            db,
+            user_id,
+            amount=Decimal("300.00"),
+            category="Food",
+            transaction_date=month_back(0),
+        )
+        for offset in range(3):
+            seed_transaction(
+                db,
+                user_id,
+                amount=Decimal("100.00"),
+                category="Rent",
+                transaction_date=month_back(offset),
+            )
+        transactions = (
+            db.query(Transaction).filter(Transaction.user_id == user_id).all()
+        )
+        food = next(f for f in category_forecasts(transactions) if f["category"] == "Food")
+        assert food["average_per_month"] == Decimal("300.00")
+
+
 class TestBudgetProjection:
     def test_projection_extrapolates_from_month_to_date(self, client, auth, db, user_id):
         now = datetime.utcnow()
@@ -458,6 +484,26 @@ class TestBudgetProjection:
         row = next(r for r in body["budget_projection"] if r["category"] == "Food")
         assert row["over_projected"] is True
         assert row["projected_ratio"] > 1
+
+    def test_projection_counts_only_the_current_month(self, client, auth, db, user_id):
+        """Spend from previous months must not be counted as month-to-date."""
+        now = datetime.utcnow()
+        seed_budget(
+            db, user_id, category="Food", month=now.month, year=now.year, amount=Decimal("1000.00")
+        )
+        seed_transaction(
+            db, user_id, amount=Decimal("100.00"), category="Food", transaction_date=now
+        )
+        seed_transaction(
+            db,
+            user_id,
+            amount=Decimal("900.00"),
+            category="Food",
+            transaction_date=month_back(1),
+        )
+        body = client.get("/api/dashboard/prediction", headers=auth).json()
+        row = next(r for r in body["budget_projection"] if r["category"] == "Food")
+        assert Decimal(row["spent"]) == Decimal("100.00")
 
 
 class TestIsolation:

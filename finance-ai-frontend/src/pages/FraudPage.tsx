@@ -29,7 +29,9 @@ const LEVEL_STYLES: Record<RiskLevel, string> = {
   CRITICAL: 'bg-danger/25 text-danger',
 }
 
-const LEVEL_OPTIONS: (RiskLevel | '')[] = ['', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
+// The backend accepts only LOW/MEDIUM/HIGH; it has no CRITICAL level (the risk
+// engine tops out at HIGH). Offering CRITICAL sent a rejected query parameter.
+const LEVEL_OPTIONS: (RiskLevel | '')[] = ['', 'LOW', 'MEDIUM', 'HIGH']
 
 export default function FraudPage() {
   const [level, setLevel] = useState<RiskLevel | ''>('')
@@ -38,7 +40,8 @@ export default function FraudPage() {
   const [working, setWorking] = useState<number | null>(null)
 
   const load = useCallback(
-    () => fraudApi.alerts({ risk_level: level || undefined, is_read: unreadOnly ? false : undefined }),
+    () =>
+      fraudApi.alerts({ risk_level: level || undefined, unread_only: unreadOnly || undefined }),
     [level, unreadOnly],
   )
   const { data, error, loading, reload } = useAsync(load, [level, unreadOnly])

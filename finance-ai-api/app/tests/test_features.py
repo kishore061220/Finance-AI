@@ -188,6 +188,12 @@ class TestBudgets:
         assert client.get("/api/budgets/period/2026/13", headers=auth).status_code == 422
         assert client.get("/api/budgets/period/2026/1", headers=auth).status_code == 200
 
+    def test_period_endpoint_validates_year(self, client, auth):
+        # An out-of-range year used to reach datetime(year, month, 1) and raise
+        # an unhandled ValueError (HTTP 500) instead of a validation error.
+        assert client.get("/api/budgets/period/0/1", headers=auth).status_code == 422
+        assert client.get("/api/budgets/period/99999/1", headers=auth).status_code == 422
+
 
 class TestDashboard:
     def test_totals_and_breakdown(self, client, auth, db):
@@ -276,6 +282,13 @@ class TestFraud:
         assert response.status_code == 200
         assert response.json()["combined_score"] is not None
         assert client.get("/api/transactions", headers=auth).json()["total"] == 0
+
+    def test_dry_run_score_rejects_a_malformed_date(self, client, auth):
+        # A malformed date is a client error (422), not a 500.
+        response = client.post(
+            "/api/ml/score?amount=100&transaction_date=not-a-date", headers=auth
+        )
+        assert response.status_code == 422
 
     def test_ml_status_is_honest_about_no_model(self, client, auth):
         body = client.get("/api/ml/status", headers=auth).json()
@@ -824,6 +837,52 @@ class TestFamily:
             f"/api/family/{group['id']}/members", headers=auth, json=payload
         ).status_code == 409
 
+    def test_non_member_cannot_read_group_data(self, client, auth, other_auth):
+        """Every read is hidden behind membership, not just the write routes."""
+        group = client.post("/api/family", headers=auth, json={"name": "Private"}).json()
+        base = f"/api/family/{group['id']}"
+        assert client.get(base, headers=other_auth).status_code == 404
+        assert client.get(f"{base}/members", headers=other_auth).status_code == 404
+        assert client.get(f"{base}/expenses", headers=other_auth).status_code == 404
+        assert client.get(f"{base}/balances", headers=other_auth).status_code == 404
+
+    def test_membership_not_can_view_all_is_the_read_boundary(
+        self, client, auth, other_auth, db
+    ):
+        """``can_view_all`` is stored and echoed, but gates nothing.
+
+        A group has no per-member private ledger, so all active members already
+        see every shared expense, split and balance. A member invited with
+        ``can_view_all=False`` reads exactly the same data as one with ``True``;
+        membership is the boundary. This test pins that behaviour so a future
+        change that starts using the flag is a conscious one.
+        """
+        from app.models.user import User
+
+        db.add(
+            User(
+                email="viewer@example.com",
+                name="Viewer",
+                firebase_uid="uid-bob",
+                is_active=True,
+            )
+        )
+        db.commit()
+
+        group = client.post("/api/family", headers=auth, json={"name": "Shared"}).json()
+        invited = client.post(
+            f"/api/family/{group['id']}/members",
+            headers=auth,
+            json={"email": "viewer@example.com", "can_view_all": False},
+        )
+        assert invited.status_code == 201
+        assert invited.json()["can_view_all"] is False
+
+        base = f"/api/family/{group['id']}"
+        assert client.get(f"{base}/members", headers=other_auth).status_code == 200
+        assert client.get(f"{base}/expenses", headers=other_auth).status_code == 200
+        assert client.get(f"{base}/balances", headers=other_auth).status_code == 200
+
 
 class TestNotifications:
     def test_create_and_mark_read(self, client, auth):
@@ -862,6 +921,72 @@ class TestNotifications:
         assert first.json()["id"] == second.json()["id"]
         assert len(client.get("/api/notifications/devices", headers=auth).json()) == 1
 
+    def test_unregister_by_token_stops_this_handset(self, client, auth):
+        client.post(
+            "/api/notifications/devices",
+            headers=auth,
+            json={"token": "handset-token", "platform": "ANDROID"},
+        )
+        gone = client.delete("/api/notifications/devices?token=handset-token", headers=auth)
+        assert gone.status_code == 204, gone.text
+        assert client.get("/api/notifications/devices", headers=auth).json() == []
+
+    def test_unregister_by_token_rejects_unknown_and_foreign_tokens(
+        self, client, auth, other_auth
+    ):
+        assert client.delete(
+            "/api/notifications/devices?token=never-registered", headers=auth
+        ).status_code == 404
+
+        client.post(
+            "/api/notifications/devices",
+            headers=other_auth,
+            json={"token": "someone-elses", "platform": "ANDROID"},
+        )
+        # A token belonging to another account must not be touchable.
+        assert client.delete(
+            "/api/notifications/devices?token=someone-elses", headers=auth
+        ).status_code == 404
+
+    def test_dead_tokens_are_deactivated(self, client, auth, db, monkeypatch):
+        """A token FCM reports as unregistered must not be retried forever."""
+        from sqlalchemy import select
+
+        from app.models.device_token import DeviceToken
+        from app.services import push
+
+        client.post(
+            "/api/notifications/devices",
+            headers=auth,
+            json={"token": "dead-token", "platform": "ANDROID"},
+        )
+        client.post(
+            "/api/notifications/devices",
+            headers=auth,
+            json={"token": "live-token", "platform": "ANDROID"},
+        )
+        dead = db.execute(
+            select(DeviceToken).where(DeviceToken.token == "dead-token")
+        ).scalar_one()
+
+        class UnregisteredError(Exception):
+            """Mirrors ``firebase_admin.messaging.UnregisteredError`` by name."""
+
+        def fake_sender(message):
+            if message.token == "dead-token":
+                raise UnregisteredError("Requested entity was not found.")
+
+        monkeypatch.setattr(push, "_get_sender", lambda: fake_sender)
+
+        result = push.send_to_user(dead.user_id, "Title", "Body", db=db)
+
+        assert result["success_count"] == 1
+        assert "dead-token" in result["invalid_tokens"]
+        active = db.execute(
+            select(DeviceToken.token).where(DeviceToken.is_active.is_(True))
+        ).scalars().all()
+        assert active == ["live-token"]
+
     def test_test_push_reports_that_nothing_was_sent(self, client, auth):
         """FCM is unconfigured, so the endpoint must say so rather than lie."""
         body = client.post("/api/notifications/devices/test", headers=auth).json()
@@ -889,6 +1014,34 @@ class TestBackup:
         detail = response.json()["detail"]
         assert detail["error"] == "Backup failed."
         assert "not configured" in detail["reason"]
+
+    def test_firebase_provider_needs_a_resolvable_bucket(self, monkeypatch):
+        """Credentials alone are not enough; the upload also needs a bucket."""
+        from app.core import config as config_module
+        from app.services import backup as backup_service
+
+        no_bucket = config_module.Settings(
+            firebase_credentials_json='{"type":"service_account"}',
+            firebase_project_id="",
+            firebase_storage_bucket="",
+        )
+        monkeypatch.setattr(backup_service, "settings", no_bucket)
+        assert backup_service.provider_available("FIREBASE_STORAGE") is False
+
+        derived = config_module.Settings(
+            firebase_credentials_json='{"type":"service_account"}',
+            firebase_project_id="my-proj",
+        )
+        monkeypatch.setattr(backup_service, "settings", derived)
+        assert backup_service.provider_available("FIREBASE_STORAGE") is True
+
+        explicit = config_module.Settings(
+            firebase_credentials_json='{"type":"service_account"}',
+            firebase_project_id="",
+            firebase_storage_bucket="my-bucket",
+        )
+        monkeypatch.setattr(backup_service, "settings", explicit)
+        assert backup_service.provider_available("FIREBASE_STORAGE") is True
 
     def test_local_backup_succeeds_and_is_verifiable(self, client, auth):
         client.post("/api/transactions", headers=auth, json=tx_payload())
@@ -1097,8 +1250,16 @@ class TestMeta:
 
         raw = response.text
         assert "refused" not in raw
-        assert main_module.settings.db_user not in raw
-        assert main_module.settings.db_password not in raw
+        # Only assert against credentials that are actually configured. An empty
+        # string is a substring of every string, so `"" not in raw` is never true
+        # and would make this degenerate on a credential-less CI runner. When a
+        # real value is present the assertion is meaningful and enforced.
+        for secret in (
+            main_module.settings.db_user,
+            main_module.settings.db_password,
+        ):
+            if secret:
+                assert secret not in raw
 
     def test_api_info_lists_features(self, client):
         features = client.get("/api/info").json()["features"]

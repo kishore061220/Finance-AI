@@ -41,6 +41,10 @@ export default function SettingsScreen() {
     setPushState(null);
     try {
       const result = await pushService.ensurePermission();
+      if (result.registered) {
+        // Once registered, keep the token fresh: FCM can rotate it at any time.
+        pushService.listenForTokenRefresh();
+      }
       setPushState(result.message);
       if (result.registered) setPushState(`${result.message} This device is registered.`);
     } catch (cause) {

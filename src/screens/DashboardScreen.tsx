@@ -28,16 +28,22 @@ export default function DashboardScreen() {
   const overview = useAsync(() => dashboardApi.overview(), []);
   const prediction = useAsync(() => dashboardApi.prediction(), []);
 
+  // `reload` is stable (see useAsync); binding it satisfies
+  // react-hooks/exhaustive-deps, which tracks the identifier rather than the
+  // member expression, and avoids rebuilding this subscription every render.
+  const { reload: reloadOverview } = overview;
+  const { reload: reloadPrediction } = prediction;
+
   React.useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
       'financeai.transactions.changed',
       () => {
-        overview.reload();
-        prediction.reload();
+        reloadOverview();
+        reloadPrediction();
       },
     );
     return () => subscription.remove();
-  }, [overview.reload, prediction.reload]);
+  }, [reloadOverview, reloadPrediction]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);

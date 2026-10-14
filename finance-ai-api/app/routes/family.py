@@ -2,7 +2,13 @@
 
 Membership is the authorisation boundary: a caller may only read a group in
 which they hold an ACTIVE member row. The legacy routes had no membership
-check at all.
+check at all. Writes that change the group or its membership are additionally
+restricted to the group owner.
+
+``FamilyMember.can_view_all`` is stored and returned but is not consulted
+anywhere: a group has no per-member private ledger, so every active member
+already sees all shared expenses, splits and balances. It is kept for a future
+capability rather than used as a read filter today.
 """
 
 from __future__ import annotations

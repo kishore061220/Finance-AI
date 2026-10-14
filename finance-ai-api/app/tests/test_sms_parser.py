@@ -96,3 +96,10 @@ def test_amount_without_currency_prefix():
     out = parse_sms("Charged 1999.99 to your card on 2026-03-11 at Amazon")
     assert out["amount"] == Decimal("1999.99")
     assert out["transaction_type"] == "expense"
+
+
+def test_credit_prose_is_not_captured_as_merchant():
+    # "credited to your account" must not surface "your" as the merchant. The
+    # 'to <word>' heuristic used to grab the next word blindly.
+    out = parse_sms("Rs 5000.00 credited to your account on 2026-03-01")
+    assert out["merchant"] is None

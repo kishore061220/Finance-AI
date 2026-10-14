@@ -1,6 +1,13 @@
-"""Encrypted-at-rest cloud backup of a user's financial data.
+"""Cloud backup of a user's financial data.
 
-Three providers are supported. Each is resolved lazily and each reports
+The payload is serialised JSON with a SHA-256 checksum recorded alongside it, so
+a restore can detect tampering or truncation. The application does **not** add
+its own encryption: data is protected in transit (TLS) and, for the cloud
+providers, encrypted at rest by the provider's default (Google Cloud Storage,
+Google Drive and Firebase Storage all do this). The local-filesystem provider is
+plaintext on the server's disk and exists only to exercise the pipeline.
+
+Three cloud providers are supported. Each is resolved lazily and each reports
 honestly when it is not configured - the endpoint always creates a
 ``BackupRecord`` so the history is truthful, recording FAILED with an
 explanation rather than pretending a backup happened.
@@ -52,7 +59,10 @@ def provider_available(provider: str) -> bool:
             and settings.google_drive_credentials_path.exists()
         )
     if provider == BackupProvider.FIREBASE_STORAGE.value:
-        return bool(settings.firebase_enabled)
+        # Firebase auth credentials alone are not enough: the upload needs a
+        # resolvable Storage bucket. Without one the provider is advertised but
+        # every upload fails, so gate on the bucket as well.
+        return bool(settings.firebase_enabled and settings.firebase_storage_bucket_name)
     return False
 
 
@@ -240,7 +250,7 @@ def _upload_drive(blob: bytes, name: str) -> Dict:
 def _upload_firebase_storage(blob: bytes, name: str) -> Dict:
     from firebase_admin import storage
 
-    bucket = storage.bucket()
+    bucket = storage.bucket(settings.firebase_storage_bucket_name)
     blob_obj = bucket.blob(name)
     blob_obj.upload_from_string(blob, content_type="application/json")
     return {

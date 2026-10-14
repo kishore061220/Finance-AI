@@ -99,3 +99,49 @@ def test_summarize_alerts_counts_levels():
     assert out["by_level"]["HIGH"] == 1
     assert out["by_level"]["LOW"] == 2
     assert out["unread"] == 2
+
+
+def test_apply_analysis_keeps_a_rules_flag_when_the_blend_dips(monkeypatch):
+    """The model must not silently un-flag a transaction the rules flagged.
+
+    Reproduces the case where the rule engine scores just over the threshold
+    (e.g. 35) but the weighted blend lands below it (e.g. 20). Previously the
+    transaction became ``is_flagged = False`` and no alert was raised at all.
+    """
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from app.services import transaction_analysis
+
+    monkeypatch.setattr(
+        transaction_analysis,
+        "score_transaction",
+        lambda transaction, history, db: {
+            "rule": {
+                "risk_score": 35,
+                "risk_level": "MEDIUM",
+                "reasons": ["amount_spike"],
+                "signals": ["amount_spike"],
+            },
+            "ml": {
+                "status": "combined",
+                "combined_score": 20,
+                "risk_level": "LOW",
+            },
+        },
+    )
+
+    transaction = SimpleNamespace(
+        user_id=1,
+        amount=Decimal("100.00"),
+        merchant="Shop",
+        category="Shopping",
+        transaction_date=datetime(2026, 3, 10, 13),
+    )
+
+    result = transaction_analysis.apply_analysis(transaction, [], None)
+
+    assert transaction.is_flagged is True
+    assert transaction.fraud_score == 35
+    assert result["alert"] is not None
+    assert result["alert"].risk_level.value == "MEDIUM"

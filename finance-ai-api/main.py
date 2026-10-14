@@ -37,6 +37,19 @@ class _LazyEngine:
     def __getattr__(self, name):
         return getattr(get_engine(), name)
 
+    def dispose(self) -> None:
+        """Dispose only an engine that was actually built.
+
+        A process that never reached the database - a credential-less test run,
+        for instance - must not construct an engine merely to tear it down, or
+        shutdown would raise ``RuntimeError: DB_USER is not configured`` after a
+        run whose tests all passed.
+        """
+        from app.database import connection
+
+        if connection._engine is not None:
+            connection._engine.dispose()
+
 
 engine = _LazyEngine()
 
@@ -62,6 +75,7 @@ from app.routes.loans import router as loan_router  # noqa: E402
 from app.routes.ml import router as ml_router  # noqa: E402
 from app.routes.notifications import router as notification_router  # noqa: E402
 from app.routes.reports import router as report_router  # noqa: E402
+from app.routes.sms import router as sms_router  # noqa: E402
 from app.routes.transactions import router as transaction_router  # noqa: E402
 
 VERSION = "2.0.0"
@@ -107,7 +121,10 @@ async def lifespan(application: FastAPI):
 
     logger.info("Finance-AI API %s ready (env=%s)", VERSION, settings.app_env)
     yield
-    engine.dispose()
+    try:
+        engine.dispose()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Database dispose FAILED: %s", exc)
     logger.info("Finance-AI API shut down cleanly")
 
 
@@ -128,9 +145,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     # A wildcard origin is unsafe once credentialed requests are allowed, so
-    # the configured list is authoritative. With no list configured and
-    # credentials off, the API is not browser-reachable by design.
-    allow_origins=settings.cors_origins,
+    # ``resolved_cors_origins`` drops it in that case and the configured list is
+    # authoritative. With no list configured and credentials off, the API is not
+    # browser-reachable by design.
+    allow_origins=settings.resolved_cors_origins,
     allow_credentials=settings.cors_allow_credentials,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
@@ -149,6 +167,7 @@ for router in (
     notification_router,
     backup_router,
     report_router,
+    sms_router,
     assistant_router,
     ml_router,
 ):
@@ -222,6 +241,7 @@ def api_info():
             "fraud_ml": True,
             "sms_parsing": True,
             "ocr_parsing": True,
+            "sms_auto_ingest": True,
             "loans": True,
             "family_sharing": True,
             "notifications_push": True,

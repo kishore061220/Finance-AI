@@ -28,7 +28,13 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 @router.get("/config", summary="Which assistant engine is active")
 def config(current_user: User = Depends(get_current_user)) -> dict:
-    remote_ready = bool(settings.assistant_api_key)
+    # Match the service's own gate exactly (see assistant.respond): a remote
+    # provider is only used when an API key is set AND the provider is not the
+    # built-in one. Reporting "remote" when the built-in engine would still
+    # answer would be a lie.
+    remote_ready = bool(
+        settings.assistant_api_key and settings.assistant_provider != "builtin"
+    )
     return {
         "provider": settings.assistant_provider if remote_ready else "builtin",
         "model": settings.assistant_model if remote_ready else None,

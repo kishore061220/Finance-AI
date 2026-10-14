@@ -128,6 +128,11 @@ def budgets_for_period(
 ) -> BudgetListResponse:
     if not 1 <= month <= 12:
         raise HTTPException(status_code=422, detail="month must be between 1 and 12")
+    # Match the bounds list_budgets enforces via Query(ge=2000, le=2200). Without
+    # this, an out-of-range year reached datetime(year, month, 1) and raised an
+    # unhandled ValueError (HTTP 500) instead of a validation error.
+    if not 2000 <= year <= 2200:
+        raise HTTPException(status_code=422, detail="year must be between 2000 and 2200")
     budgets = list(
         db.execute(
             select(Budget)

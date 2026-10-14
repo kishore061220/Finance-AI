@@ -1,5 +1,6 @@
 package com.financeai.sms
 
+import android.content.Context
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -47,6 +48,22 @@ class SmsReceiverModule(private val reactContext: ReactApplicationContext) :
     promise.resolve(true)
   }
 
+  /**
+   * Persist the user's opt-in so [SmsReceiver] can honour it even when no React
+   * instance is alive. Without this the native receiver would keep capturing and
+   * storing messages after the user turned detection off.
+   */
+  @ReactMethod
+  fun setEnabled(enabled: Boolean) {
+    prefs(reactContext).edit().putBoolean(PREF_KEY, enabled).apply()
+  }
+
+  /** Current persisted opt-in, for the UI to reconcile against. */
+  @ReactMethod
+  fun isEnabled(promise: Promise) {
+    promise.resolve(isEnabled(reactContext))
+  }
+
   /** Messages captured while no React instance was attached. */
   @ReactMethod
   fun getPendingMessages(promise: Promise) {
@@ -67,8 +84,19 @@ class SmsReceiverModule(private val reactContext: ReactApplicationContext) :
     const val NAME = "SmsReceiver"
     const val EVENT_NAME = "onSmsReceived"
 
+    /** Must match `AUTO_DETECT_KEY` in src/services/smsDetector.ts. */
+    const val PREF_KEY = "financeai.sms.enabled"
+    private const val PREFS_NAME = "financeai_sms"
+
     @Volatile
     private var instance: SmsReceiverModule? = null
+
+    private fun prefs(context: Context) =
+      context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    /** True only when the user has switched detection on; defaults to off. */
+    fun isEnabled(context: Context): Boolean =
+      prefs(context).getBoolean(PREF_KEY, false)
 
     /** Emits to JS if it is listening; returns false so the caller can persist instead. */
     fun deliver(item: JSONObject): Boolean {

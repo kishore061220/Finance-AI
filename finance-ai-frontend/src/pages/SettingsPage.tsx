@@ -116,7 +116,9 @@ function BackupRow({
       setError(
         result.verified
           ? null
-          : `Checksum mismatch. This backup should not be restored. Expected ${result.checksum}.`,
+          : result.message
+            ? `This backup could not be verified: ${result.message}`
+            : `Checksum mismatch. This backup should not be restored. Expected ${result.expected_checksum}, got ${result.actual_checksum}.`,
       )
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Could not verify that backup.')
@@ -137,9 +139,9 @@ function BackupRow({
             </span>
             <span
               className={`rounded px-2 py-0.5 text-xs font-medium ${
-                backup.status === 'completed'
+                backup.status === 'SUCCESS'
                   ? 'bg-positive/15 text-positive'
-                  : backup.status === 'failed'
+                  : backup.status === 'FAILED'
                     ? 'bg-danger/15 text-danger'
                     : 'bg-warning/15 text-warning'
               }`}
@@ -289,10 +291,9 @@ export default function SettingsPage() {
                 onChange={(event) => setProvider(event.target.value)}
               >
                 <option value="">Server default</option>
-                <option value="LOCAL">Local disk</option>
-                <option value="FIREBASE">Firebase Storage</option>
-                <option value="GCS">Google Cloud Storage</option>
-                <option value="DRIVE">Google Drive</option>
+                <option value="FIREBASE_STORAGE">Firebase Storage</option>
+                <option value="GOOGLE_CLOUD_STORAGE">Google Cloud Storage</option>
+                <option value="GOOGLE_DRIVE">Google Drive</option>
               </Select>
             </Field>
           </div>

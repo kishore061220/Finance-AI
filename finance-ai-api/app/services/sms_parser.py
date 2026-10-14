@@ -132,6 +132,12 @@ def _extract_merchant(text: str) -> Optional[str]:
         r"(?:via|through|upi|neft|imps|ref|avl|avail|bal|balance|trxn|txn|"
         r"a/c|acct|account|on|dated|for\s+\d)"
     )
+    # Words that follow "to"/"from"/"for" in ordinary bank prose but are not
+    # merchants, e.g. "Rs 5000 credited to your account" -> "your".
+    noise = {
+        "your", "the", "my", "our", "their", "his", "her", "this", "that",
+        "a", "an", "and", "to", "from", "account", "ac", "a/c", "bank",
+    }
     patterns = (
         re.compile(rf"\bfor\s+([A-Za-z0-9][A-Za-z0-9&.\-]{{1,40}}(?:\s+[A-Za-z0-9&.\-]{{1,20}})*?)\s+(?={stop}|$)", re.IGNORECASE),
         re.compile(rf"\bto\s+([A-Za-z0-9][A-Za-z0-9&.\-]{{1,40}}(?:\s+[A-Za-z0-9&.\-]{{1,20}})*?)\s+(?={stop}|$)", re.IGNORECASE),
@@ -141,7 +147,10 @@ def _extract_merchant(text: str) -> Optional[str]:
         m = pattern.search(text)
         if m:
             candidate = re.sub(r"\s+", " ", m.group(1)).strip(" .-")
-            # Reject pure noise such as a masked account number.
+            lowered = candidate.lower()
+            # Reject prose filler and pure noise such as a masked account number.
+            if lowered in noise:
+                continue
             if candidate and len(candidate) > 1 and not candidate.replace("X", "").replace("x", "").isdigit():
                 return candidate
     return None

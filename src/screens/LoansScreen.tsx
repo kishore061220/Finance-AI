@@ -36,7 +36,12 @@ import {
   todayIso,
 } from '../lib/format';
 import { loanApi } from '../services/endpoints';
-import type { EmiResponse, Loan, PrepaymentEffect } from '../types';
+import type {
+  EmiResponse,
+  Loan,
+  PrepaymentEffect,
+  UpcomingInstallment,
+} from '../types';
 import { colors, space, statusColor, styles, type } from '../theme';
 
 /** Which view is showing. A detail view carries the loan id with it. */
@@ -290,6 +295,15 @@ function LoanDetailPane({
         </Card>
       ) : null}
 
+      <PaymentPanel
+        loanId={loanId}
+        upcoming={detail.data.upcoming}
+        onPaid={() => {
+          detail.reload();
+          onChanged();
+        }}
+      />
+
       <PrepaymentPanel loanId={loanId} principal={detail.data.principal} />
 
       <Button label="Delete loan" variant="danger" onPress={remove} />
@@ -373,6 +387,58 @@ function PrepaymentPanel({
           </Text>
         </View>
       ) : null}
+    </Card>
+  );
+}
+
+function PaymentPanel({
+  loanId,
+  upcoming,
+  onPaid,
+}: {
+  loanId: number;
+  upcoming: UpcomingInstallment[];
+  onPaid: () => void;
+}) {
+  const [busyNumber, setBusyNumber] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (upcoming.length === 0) return null;
+
+  const mark = async (installmentNumber: number) => {
+    setBusyNumber(installmentNumber);
+    setError(null);
+    try {
+      await loanApi.recordPayment(loanId, {
+        installment_number: installmentNumber,
+        status: 'PAID',
+        paid_date: todayIso(),
+      });
+      onPaid();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not record the payment.');
+    } finally {
+      setBusyNumber(null);
+    }
+  };
+
+  return (
+    <Card title="Record a payment">
+      <Text style={type.small}>
+        Mark an upcoming instalment as paid today. The server records it on the
+        loan schedule and closes the loan once every instalment is paid.
+      </Text>
+      {error ? <ErrorState message={error} showRetry={false} /> : null}
+      {upcoming.map((installment) => (
+        <Button
+          key={installment.installment_number}
+          label={`Mark instalment #${installment.installment_number} paid`}
+          variant="secondary"
+          onPress={() => { void mark(installment.installment_number); }}
+          loading={busyNumber === installment.installment_number}
+          disabled={busyNumber !== null}
+        />
+      ))}
     </Card>
   );
 }

@@ -54,6 +54,18 @@ def test_loan_summary_partial_payments():
     assert s["next_due_date"] == date(2026, 1, 5)
 
 
+def test_principal_repaid_counts_only_paid_installments():
+    payments = [
+        _payment(1, "10000", "PAID", 5, "9500"),
+        _payment(2, "10000", "PENDING", 5, "9580"),
+        _payment(3, "10000", "OVERDUE", 5, "9600"),
+    ]
+    s = loan_summary(payments)
+    # Only the paid installment's principal is repaid; the pending/overdue
+    # principal must not be counted as already repaid.
+    assert s["principal_repaid"] == Decimal("9500")
+
+
 def test_loan_summary_zero_values():
     s = loan_summary([])
     assert s["total_due"] == Decimal("0")

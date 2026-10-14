@@ -33,6 +33,7 @@ import React, {
 import { ApiError, configureAuth, setToken } from '../services/api';
 import { authApi } from '../services/endpoints';
 import { firebaseAuth, firebaseProjectId, isFirebaseAvailable } from '../services/firebase';
+import { pushService } from '../services/push';
 import type { AuthConfig, UserResponse } from '../types';
 
 export type SessionStatus = 'loading' | 'authenticated' | 'anonymous';
@@ -208,6 +209,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       // A failed acknowledgement must not trap the user in a signed-in shell.
     }
+
+    // Stop this handset's push while the token is still valid, so the next
+    // account on this device does not inherit the previous one's alerts.
+    await pushService.unregisterCurrentDevice();
 
     const auth = await firebaseAuth();
     if (auth) {
