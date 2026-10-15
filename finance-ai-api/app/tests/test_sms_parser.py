@@ -103,3 +103,31 @@ def test_credit_prose_is_not_captured_as_merchant():
     # 'to <word>' heuristic used to grab the next word blindly.
     out = parse_sms("Rs 5000.00 credited to your account on 2026-03-01")
     assert out["merchant"] is None
+
+
+def test_rupee_symbol_amount_is_parsed():
+    out = parse_sms("₹1,234.56 debited on 2026-03-05 for Swiggy")
+    assert out["amount"] == Decimal("1234.56")
+    assert out["transaction_type"] == "expense"
+
+
+def test_multiline_body_is_parsed():
+    # Multipart SMS are merged on the device; the parser must tolerate the
+    # newline that lands mid-sentence.
+    body = "Your A/c XX1234 is debited by Rs.1,234.56\non 05-Mar-2026 for SWIGGY"
+    out = parse_sms(body)
+    assert out["amount"] == Decimal("1234.56")
+    assert out["transaction_date"] == datetime(2026, 3, 5)
+
+
+def test_bare_utr_reference_is_captured():
+    # A 12-digit UTR with no "Ref" keyword still identifies the transfer.
+    out = parse_sms("Rs 900.00 debited on 2026-03-05 UTR 123456789012")
+    assert out["bank_reference"] == "123456789012"
+
+
+def test_implausibly_large_amount_is_ignored():
+    # A ten-digit figure is far more likely an account/UTR than a transaction,
+    # so it must not be taken as the amount.
+    out = parse_sms("Rs 1234567890.00 debited on 2026-03-05")
+    assert out["amount"] is None

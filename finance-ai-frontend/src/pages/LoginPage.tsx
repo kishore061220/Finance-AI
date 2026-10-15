@@ -18,17 +18,23 @@ import { Navigate } from 'react-router-dom'
 
 import { useSession, isFirebaseConfigured } from '@/auth/SessionContext'
 import { Alert, Button, Card, Field, TextInput } from '@/components/ui'
+import { describeAuthFailure } from '@/lib/authErrors'
 
 type Mode = 'signin' | 'signup'
+
+/** Mirrors the browser's own constraint for `type="email"`, for the reset flow. */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function LoginPage() {
   const {
     status,
     config,
     firebaseProjectIssue,
+    authError,
     signInWithEmail,
     signUp,
     signInWithGoogle,
+    sendPasswordReset,
   } = useSession()
 
   const [mode, setMode] = useState<Mode>('signin')
@@ -36,7 +42,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [resetBusy, setResetBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   /**
    * Only offer forms that can actually succeed.
@@ -58,6 +66,7 @@ export default function LoginPage() {
     event.preventDefault()
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
       if (mode === 'signin') {
         await signInWithEmail(email, password)
@@ -65,9 +74,9 @@ export default function LoginPage() {
         await signUp(email, password, name)
       }
     } catch (cause: unknown) {
-      setError(
-        cause instanceof Error ? cause.message : 'Could not sign in. Please try again.',
-      )
+      // Never render the raw SDK string ("Firebase: Error (auth/...)."); map it
+      // to a safe, actionable message.
+      setError(describeAuthFailure(cause))
     } finally {
       setBusy(false)
     }
@@ -76,12 +85,47 @@ export default function LoginPage() {
   const googleSignIn = async () => {
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
       await signInWithGoogle()
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : 'Google sign-in failed.')
+      setError(describeAuthFailure(cause))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Trigger a password-reset email.
+   *
+   * The confirmation is deliberately identical whether or not the address is
+   * registered, so the form cannot be used to discover which emails have
+   * accounts. Only a malformed address or a network failure is reported.
+   */
+  const forgotPassword = async () => {
+    if (resetBusy || busy) return
+    setError(null)
+    setNotice(null)
+    const trimmed = email.trim()
+    if (!trimmed) {
+      setError('Enter your email address above, then choose "Forgot password?".')
+      return
+    }
+    if (!EMAIL_SHAPE.test(trimmed)) {
+      setError('Enter a valid email address.')
+      return
+    }
+    setResetBusy(true)
+    try {
+      await sendPasswordReset(trimmed)
+      setNotice(
+        `If an account exists for ${trimmed}, a password reset link is on its way. ` +
+          'Check your inbox (and spam folder), then follow the link to set a new password.',
+      )
+    } catch (cause: unknown) {
+      setError(describeAuthFailure(cause))
+    } finally {
+      setResetBusy(false)
     }
   }
 
@@ -125,9 +169,15 @@ export default function LoginPage() {
         </div>
 
         <Card>
-          {error && (
+          {(error || authError) && (
             <div className="mb-4">
-              <Alert tone="error">{error}</Alert>
+              <Alert tone="error">{error ?? authError}</Alert>
+            </div>
+          )}
+
+          {notice && (
+            <div className="mb-4">
+              <Alert tone="success">{notice}</Alert>
             </div>
           )}
 
@@ -175,6 +225,19 @@ export default function LoginPage() {
                   />
                 </Field>
 
+                {mode === 'signin' && (
+                  <div className="-mt-1 text-right">
+                    <button
+                      type="button"
+                      className="text-sm text-accent hover:underline disabled:opacity-55"
+                      onClick={() => void forgotPassword()}
+                      disabled={busy || resetBusy}
+                    >
+                      {resetBusy ? 'Sending reset link…' : 'Forgot password?'}
+                    </button>
+                  </div>
+                )}
+
                 <Button type="submit" loading={busy} className="w-full">
                   {mode === 'signup' ? 'Create account' : 'Sign in'}
                 </Button>
@@ -201,7 +264,11 @@ export default function LoginPage() {
                 <button
                   type="button"
                   className="text-accent hover:underline"
-                  onClick={() => setMode(mode === 'signup' ? 'signin' : 'signup')}
+                  onClick={() => {
+                    setMode(mode === 'signup' ? 'signin' : 'signup')
+                    setError(null)
+                    setNotice(null)
+                  }}
                 >
                   {mode === 'signup' ? 'Sign in' : 'Create one'}
                 </button>

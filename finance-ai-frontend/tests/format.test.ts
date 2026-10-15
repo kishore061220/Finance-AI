@@ -82,6 +82,17 @@ describe('currency formatting', () => {
     expect(formatCurrency('1234.5')).toMatch(/1,234\.50/)
   })
 
+  it('uses INR with the rupee symbol by default', () => {
+    expect(formatCurrency('100')).toContain('₹')
+    expect(formatCurrency('1234.5')).toContain('₹')
+  })
+
+  it('groups digits the Indian way (lakh/crore)', () => {
+    // Western grouping would render these as 100,000.00 and 1,234,567.50.
+    expect(formatCurrency('100000')).toBe('₹1,00,000.00')
+    expect(formatCurrency('1234567.5')).toBe('₹12,34,567.50')
+  })
+
   it('shows a dash for missing money, not zero', () => {
     // A missing amount and a zero amount are different facts.
     expect(formatCurrency(null)).toBe('—')
@@ -95,6 +106,12 @@ describe('currency formatting', () => {
 
   it('compacts large values for tight spaces', () => {
     expect(formatCompactCurrency('12500')).toMatch(/12\.5K/)
+  })
+
+  it('compacts using Indian units', () => {
+    expect(formatCompactCurrency('100000')).toContain('₹')
+    expect(formatCompactCurrency('100000')).toMatch(/1L/)
+    expect(formatCompactCurrency('10000000')).toMatch(/1Cr/)
   })
 })
 

@@ -565,8 +565,19 @@ class AssistantMessage(BaseModel):
 
 class AssistantRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
-    history: List[AssistantMessage] = []
+    # The service only forwards the last 10 turns, so anything beyond 20 is
+    # discarded; capping the request itself stops an oversized body from being
+    # parsed into memory in the first place.
+    history: List[AssistantMessage] = Field(default_factory=list, max_length=20)
     include_context: bool = True
+
+    @field_validator("message")
+    @classmethod
+    def _strip_message(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("message cannot be blank")
+        return v
 
 
 class AssistantResponse(BaseModel):
@@ -576,6 +587,17 @@ class AssistantResponse(BaseModel):
     context_used: List[str] = []
     suggestions: List[str] = []
     fallback: bool = False
+    # True when the configured remote provider failed and the answer fell back
+    # (or could not be given). The client may offer a retry.
+    retryable: bool = False
+    # Safe, provider-agnostic failure code (never the raw provider body), e.g.
+    # quota_exhausted | rate_limited | provider_unavailable | timeout |
+    # auth_error | model_not_found | bad_response. None when a remote answer
+    # succeeded.
+    error: Optional[str] = None
+    # For quota/rate-limit errors: seconds until the provider should be usable
+    # again. None when not applicable.
+    retry_after_seconds: Optional[int] = None
 
 
 DashboardResponse.model_rebuild()

@@ -31,7 +31,8 @@ MIN_POSITIVE_LABELS = 5
 ARTIFACT_DIR = Path(__file__).resolve().parents[2] / "ml_artifacts"
 
 # Mirrors finance_ai_ml.export.ARTIFACT_FORMAT_VERSION. Kept in sync by
-# app/tests/test_feature_parity.py, which fails if the two drift. Bump this when
+# finance-ai-ml/tests/test_api_feature_parity.py, which fails if the two drift.
+# Bump this when
 # the sidecar layout changes so an older reader refuses the artifact rather than
 # silently mis-reading it.
 ARTIFACT_FORMAT_VERSION = 1

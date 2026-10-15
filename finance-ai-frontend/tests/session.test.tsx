@@ -97,7 +97,19 @@ function mockApi(overrides: Record<string, unknown> = {}) {
     '/api/notifications/unread-count': { unread: 0 },
     '/api/loans': [],
     '/api/auth/profile': { ...TEST_USER, transaction_count: 4, budget_count: 2, family_count: 0, loan_count: 1 },
-    '/api/ml/status': { model_loaded: false, model: null, trained_at: null, features: [], error: 'no artifact' },
+    // The real `/api/ml/status` shape - the old `features: []` mock hid a
+    // crash when the model actually loaded (see tests/settings.test.tsx).
+    '/api/ml/status': {
+      sklearn_available: true,
+      sklearn_reason: null,
+      model_loaded: false,
+      model_name: null,
+      feature_count: 12,
+      load_error: 'no artifact',
+      user_transaction_count: 4,
+      scoring_mode: 'rules_only',
+      message: 'No trained model is available, so scoring uses the rule engine only.',
+    },
     '/api/backups': { items: [], total: 0, provider: null, configured: false, message: 'No provider configured.' },
     '/api/family': [],
   }
@@ -128,9 +140,12 @@ function mockApi(overrides: Record<string, unknown> = {}) {
  * Every page is a `lazy()` chunk, so the first render of one also pays for
  * transforming that chunk - and the dashboard drags in Recharts, which is the
  * slowest. Testing Library's 1s default is not enough on a cold module cache, so
- * a timeout-driven failure here would say nothing about the app.
+ * a timeout-driven failure here would say nothing about the app. When the whole
+ * suite runs in parallel on a cold cache the Recharts transform has been seen to
+ * take ~19s, so the budget matches the per-test timeout rather than sitting just
+ * under it.
  */
-const LAZY_TIMEOUT = 10_000
+const LAZY_TIMEOUT = 25_000
 
 /** Preserved so the adapter a single test installs cannot leak into the next. */
 const ORIGINAL_ADAPTER = api.defaults.adapter
@@ -377,6 +392,40 @@ describe('authenticated access', () => {
     await waitFor(() => {
       expect(captured.some((header) => header === 'Bearer refreshed-token')).toBe(true)
     })
+  })
+
+  it('completes a redirect-based sign-in on load', async () => {
+    const seen = mockApi()
+    fb.setConfigured(true)
+    fb.setProjectId('finance-ai-test')
+    // This page load is the return leg of a redirect sign-in.
+    fb.setRedirectResult({ user: { email: 'ada@example.com', uid: 'uid-9' } })
+
+    renderApp('/login')
+
+    // The redirect credential must be adopted and the user sent to the
+    // dashboard, not left on the login screen.
+    expect(
+      await screen.findByRole('heading', { name: /welcome back/i }, { timeout: LAZY_TIMEOUT }),
+    ).toBeInTheDocument()
+    expect(seen.some((call) => call.url === '/api/auth/me')).toBe(true)
+  })
+
+  it('surfaces a failed redirect sign-in on the login screen', async () => {
+    mockApi()
+    fb.setConfigured(true)
+    fb.setProjectId('finance-ai-test')
+    fb.setRedirectError(
+      Object.assign(new Error('Firebase: Error (auth/unauthorized-domain).'), {
+        code: 'auth/unauthorized-domain',
+      }),
+    )
+
+    renderApp('/login')
+
+    expect(
+      await screen.findByText(/not authorised for Firebase sign-in/i),
+    ).toBeInTheDocument()
   })
 })
 

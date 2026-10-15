@@ -106,9 +106,9 @@ made-up number. A produced forecast comes back as `status: "predicted"`.
 Scoring reads the model artifact together with the feature order it was trained
 against, so the position of a column is never assumed. `app/ml/features.py`
 builds the 31 features in semantic order and `finance_ai_ml` declares the same
-31 names alphabetically; `app/tests/test_feature_parity.py` asserts the two sets
-never drift, because a rename on one side only would be dropped silently at
-scoring time.
+31 names alphabetically; `finance-ai-ml/tests/test_api_feature_parity.py` asserts
+the two sets never drift, because a rename on one side only would be dropped
+silently at scoring time.
 
 The sidecar (`ml_artifacts/fraud_model.json`) records the feature names, the
 artifact format version, and a SHA-256 checksum of the `.pkl`. `trainer.load`

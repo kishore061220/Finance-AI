@@ -141,6 +141,18 @@ class Settings:
     assistant_base_url: str = field(
         default_factory=lambda: os.getenv("ASSISTANT_BASE_URL", "")
     )
+    # Optional secondary OpenAI-compatible provider, used only when the primary
+    # reports quota/unavailability AND all three of these are set. Absent by
+    # default, so no extra provider is contacted unless explicitly configured.
+    fallback_llm_base_url: str = field(
+        default_factory=lambda: os.getenv("FALLBACK_LLM_BASE_URL", "")
+    )
+    fallback_llm_api_key: str = field(
+        default_factory=lambda: os.getenv("FALLBACK_LLM_API_KEY", "")
+    )
+    fallback_llm_model: str = field(
+        default_factory=lambda: os.getenv("FALLBACK_LLM_MODEL", "")
+    )
 
     # --- Behaviour ---------------------------------------------------------
     recent_transaction_limit: int = field(

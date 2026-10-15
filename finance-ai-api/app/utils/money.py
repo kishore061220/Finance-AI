@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import List
 
 TWO = Decimal("2")
@@ -96,3 +96,43 @@ def safe_div(numerator: Decimal, denominator: Decimal, default: Decimal = Decima
 
 def clamp(value: Decimal, low: Decimal, high: Decimal) -> Decimal:
     return max(low, min(high, value))
+
+
+def _group_indian(integer_digits: str) -> str:
+    """Group an integer digit string the Indian way: last 3, then pairs.
+
+    ``"1234567"`` -> ``"12,34,567"``. Western grouping (``"1,234,567"``) is
+    deliberately not used: the whole app formats money in the ``en-IN`` style.
+    """
+    if len(integer_digits) <= 3:
+        return integer_digits
+    head, tail = integer_digits[:-3], integer_digits[-3:]
+    groups: List[str] = []
+    while len(head) > 2:
+        groups.insert(0, head[-2:])
+        head = head[:-2]
+    if head:
+        groups.insert(0, head)
+    groups.append(tail)
+    return ",".join(groups)
+
+
+def format_inr(value) -> str:
+    """Render a numeric value as Indian-rupee display text.
+
+    Display only - it never mutates or rounds the value that is *stored*; the
+    input is only quantised to two decimals for presentation. Output looks like
+    ``₹1,23,456.78`` and matches the ``en-IN`` formatting the mobile and web
+    clients use. Anything that is not a finite number is returned unchanged as a
+    string, so an unexpected type degrades to "show the raw value" instead of
+    raising inside a response builder.
+    """
+    if value is None:
+        return ""
+    try:
+        amount = money(value)
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value)
+    sign = "-" if amount < 0 else ""
+    integer, _, fraction = f"{abs(amount):.2f}".partition(".")
+    return f"₹{sign}{_group_indian(integer)}.{fraction}"

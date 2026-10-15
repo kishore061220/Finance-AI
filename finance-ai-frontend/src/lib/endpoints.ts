@@ -313,7 +313,13 @@ export const assistantApi = {
     provider: string
     model: string | null
     remote_configured: boolean
+    /** builtin | configured | working | quota_exhausted | unavailable */
+    status?: string
     message: string
+    /** Seconds until a quota/rate-limit breaker clears (when applicable). */
+    retry_after_seconds?: number | null
+    /** ISO timestamp the breaker clears (when applicable). */
+    retry_at?: string | null
     suggestions: string[]
   }> => get('/api/assistant/config'),
   ask: (payload: AssistantRequest): Promise<{
@@ -323,6 +329,13 @@ export const assistantApi = {
     context_used: string[]
     suggestions: string[]
     fallback: boolean
+    /** True when the remote provider failed and the answer is a retryable fallback. */
+    retryable?: boolean
+    /** Safe failure code: quota_exhausted | rate_limited | provider_unavailable |
+     * timeout | auth_error | model_not_found | bad_response. */
+    error?: string | null
+    /** Seconds until the provider is expected to be usable again. */
+    retry_after_seconds?: number | null
   }> => post('/api/assistant', payload),
 }
 

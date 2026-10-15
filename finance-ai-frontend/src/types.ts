@@ -410,12 +410,23 @@ export interface RestoreResponse {
   applied: boolean
 }
 
+/**
+ * The fraud-model status reported by `GET /api/ml/status`.
+ *
+ * These field names mirror the backend response exactly. The previous shape
+ * (`model`, `features`, `trained_at`, `error`) did not exist on the wire, so a
+ * loaded model made the panel read `undefined.length` and crash the screen.
+ */
 export interface MlStatus {
+  sklearn_available: boolean
+  sklearn_reason: string | null
   model_loaded: boolean
-  model: string | null
-  trained_at: string | null
-  features: string[]
-  error: string
+  model_name: string | null
+  feature_count: number
+  load_error: string | null
+  user_transaction_count: number
+  scoring_mode: 'combined' | 'rules_only' | string
+  message: string
 }
 
 export interface AuthConfig {

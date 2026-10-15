@@ -6,14 +6,29 @@
  * (see `toAmountString`).
  */
 
-const currencyFormatter = new Intl.NumberFormat(undefined, {
+/**
+ * INR is the app-wide default currency and `en-IN` is the locale that renders
+ * Indian digit grouping (lakh/crore): 100000 -> "₹1,00,000.00", not
+ * "₹100,000.00". Both are fixed rather than taken from the browser so a user
+ * whose device is set to en-US still sees the amounts the way the ledger stores
+ * them. The backend keeps raw `Decimal` strings; this is display only.
+ */
+const currencyFormatter = new Intl.NumberFormat('en-IN', {
   style: 'currency',
-  currency: 'USD',
+  currency: 'INR',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
 
-const compactFormatter = new Intl.NumberFormat(undefined, {
+/**
+ * Compact currency for chart axes and dense rows.
+ *
+ * `en-IN` compact notation uses Indian units (K / L / Cr), so 12500 -> "₹12.5K",
+ * 100000 -> "₹1L" and 10000000 -> "₹1Cr".
+ */
+const compactFormatter = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
   notation: 'compact',
   maximumFractionDigits: 1,
 })
@@ -49,7 +64,7 @@ export function formatNumber(value: string | number | null | undefined, fallback
 
 export function formatCompactCurrency(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—'
-  return `$${compactFormatter.format(toNumber(value))}`
+  return compactFormatter.format(toNumber(value))
 }
 
 export function formatPercent(value: number | null | undefined, digits = 1): string {

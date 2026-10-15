@@ -6,9 +6,10 @@
  */
 
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { useSession } from '@/auth/SessionContext'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import { fraudApi } from '@/lib/endpoints'
 
 const NAV: { to: string; label: string }[] = [
@@ -26,6 +27,7 @@ const NAV: { to: string; label: string }[] = [
 
 export default function AppLayout() {
   const { user, signOut } = useSession()
+  const location = useLocation()
   const [unreadAlerts, setUnreadAlerts] = useState(0)
 
   /**
@@ -130,7 +132,13 @@ export default function AppLayout() {
         </header>
 
         <main className="min-w-0 flex-1 p-5 lg:p-8">
-          <Outlet />
+          {/*
+            Keyed by path so navigating away from a crashed screen mounts a
+            fresh boundary instead of showing the old error on every route.
+          */}
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

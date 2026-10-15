@@ -26,6 +26,22 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("ALLOW_DEV_AUTH", "true")
 os.environ.setdefault("DB_ECHO", "false")
 
+# A developer's real ``.env`` may point at live Firebase credentials. That turns
+# ``firebase_enabled`` on, which silently disables the dev provider and makes
+# every test here fail with a 401. The Firebase names are set to *empty* before
+# the app is imported so ``load_dotenv`` (which never overrides a variable that
+# already exists in the environment) cannot restore them from ``.env``.
+for _firebase_var in (
+    "FIREBASE_CREDENTIALS_PATH",
+    "FIREBASE_CREDENTIALS_JSON",
+    "FIREBASE_PROJECT_ID",
+    "FIREBASE_STORAGE_BUCKET",
+):
+    os.environ[_firebase_var] = ""
+# Application Default Credentials are detected by the variable merely being
+# present, so it must be absent rather than empty. It is not in the repo ``.env``.
+os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
@@ -45,7 +61,16 @@ settings = config_module.Settings(
     allow_dev_auth=True,
     app_env="test",
     firebase_project_id="",
+    firebase_credentials_path=None,
     firebase_credentials_json="",
+    firebase_storage_bucket="",
+    # A developer's real .env may point at a paid assistant provider. Pinning
+    # these to the built-in engine keeps every test deterministic and, more
+    # importantly, stops the suite from making real external calls.
+    assistant_provider="builtin",
+    assistant_api_key="",
+    assistant_model="gpt-4o-mini",
+    assistant_base_url="",
 )
 security_module.settings = settings
 security_module.reset_token_verifier()

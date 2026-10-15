@@ -24,16 +24,51 @@ import { backupApi, mlApi } from '@/lib/endpoints'
 import { formatDateTime } from '@/lib/format'
 import type { BackupStatus, MlStatus, RestoreResponse } from '@/types'
 
+/**
+ * Model status panel.
+ *
+ * Everything here reads optional fields defensively. A status response is the
+ * one payload that can legitimately vary (sklearn missing, no artifact yet, a
+ * load error), and a field access on an unexpected shape is exactly what used
+ * to take the whole Settings page down. An absent value degrades to a plain
+ * sentence, never a crash.
+ */
 function MlStatusPanel() {
-  const { data, error, loading } = useAsync(() => mlApi.status(), [])
+  const { data, error, loading, reload } = useAsync(() => mlApi.status(), [])
 
-  if (loading) return <Spinner label="Checking model status" />
-  if (error) {
-    return <Alert tone="warning">Could not read the model status: {error}</Alert>
+  if (loading) {
+    return (
+      <Card title="Fraud model">
+        <Spinner label="Checking model status" />
+      </Card>
+    )
   }
-  if (!data) return null
+
+  if (error) {
+    return (
+      <Card title="Fraud model">
+        <Alert tone="warning">Could not read the model status: {error}</Alert>
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" onClick={reload}>
+            Try again
+          </Button>
+        </div>
+      </Card>
+    )
+  }
+
+  if (!data) {
+    return (
+      <Card title="Fraud model">
+        <p className="text-sm text-muted">No model status was returned.</p>
+      </Card>
+    )
+  }
 
   const status = data as MlStatus
+  const featureCount = typeof status.feature_count === 'number' ? status.feature_count : 0
+  const transactionCount =
+    typeof status.user_transaction_count === 'number' ? status.user_transaction_count : 0
 
   return (
     <Card title="Fraud model">
@@ -43,14 +78,15 @@ function MlStatusPanel() {
             <span className="inline-flex items-center gap-2 rounded bg-positive/15 px-2 py-1 text-xs font-medium text-positive">
               Loaded
             </span>
-            <span className="ml-2 text-muted">{status.model}</span>
+            {status.model_name && <span className="ml-2 text-muted">{status.model_name}</span>}
           </p>
-          {status.trained_at && (
-            <p className="mt-2 text-xs text-muted">Trained {formatDateTime(status.trained_at)}</p>
-          )}
           <p className="mt-2 text-xs text-muted">
-            Scores {status.features.length} features per transaction.
+            Scores {featureCount} features per transaction
+            {status.scoring_mode === 'combined'
+              ? ' with the model blended into the rule engine.'
+              : '.'}
           </p>
+          {status.message && <p className="mt-2 text-xs text-muted">{status.message}</p>}
         </>
       ) : (
         <>
@@ -63,7 +99,14 @@ function MlStatusPanel() {
             Fraud scoring is running on rules only. The offline trainer refuses to produce a model
             without enough labelled data, so no artifact has been published.
           </p>
-          {status.error && <p className="mt-2 text-xs text-muted">Reason: {status.error}</p>}
+          {(status.load_error || status.sklearn_reason) && (
+            <p className="mt-2 text-xs text-muted">
+              Reason: {status.load_error ?? status.sklearn_reason}
+            </p>
+          )}
+          <p className="mt-2 text-xs text-muted">
+            {transactionCount} of your transactions are available to train on.
+          </p>
         </>
       )}
     </Card>
@@ -314,7 +357,17 @@ export default function SettingsPage() {
         )}
 
         {backups.loading && <Spinner label="Loading backups" />}
-        {backups.error && <Alert tone="error">{backups.error}</Alert>}
+
+        {backups.error && (
+          <div className="mb-4">
+            <Alert tone="error">{backups.error}</Alert>
+            <div className="mt-3">
+              <Button variant="secondary" size="sm" onClick={backups.reload}>
+                Try again
+              </Button>
+            </div>
+          </div>
+        )}
 
         {!backups.loading && backups.data && !backups.data.configured && (
           <div className="mb-4">
@@ -324,9 +377,15 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {!backups.loading && (backups.data?.items.length ?? 0) === 0 && (
-          <EmptyState title="No backups yet" description="Create one to protect your data." />
-        )}
+        {/*
+          The empty state is gated on there being no error: when the list call
+          failed, `data` is null and "No backups yet" would be a lie.
+        */}
+        {!backups.loading &&
+          !backups.error &&
+          (backups.data?.items.length ?? 0) === 0 && (
+            <EmptyState title="No backups yet" description="Create one to protect your data." />
+          )}
 
         {(backups.data?.items.length ?? 0) > 0 && (
           <ul className="space-y-3">

@@ -7,6 +7,7 @@ import pytest
 from app.utils.money import (
     amortisation_schedule,
     calculate_emi,
+    format_inr,
     money,
     safe_div,
     total_interest,
@@ -64,3 +65,24 @@ def test_total_interest_zero_for_zero_rate():
 def test_safe_div_handles_zero_denominator():
     assert safe_div(Decimal("10"), Decimal("0"), Decimal("5")) == Decimal("5")
     assert safe_div(Decimal("10"), Decimal("2")) == Decimal("5")
+
+
+def test_format_inr_uses_the_rupee_symbol():
+    assert format_inr(Decimal("450")) == "₹450.00"
+    assert format_inr("450.5") == "₹450.50"
+
+
+def test_format_inr_groups_digits_the_indian_way():
+    # Lakh (1,00,000) and crore (1,00,00,000) separators, not Western grouping.
+    assert format_inr(Decimal("100000")) == "₹1,00,000.00"
+    assert format_inr(Decimal("1234567.5")) == "₹12,34,567.50"
+    assert format_inr(Decimal("10000000")) == "₹1,00,00,000.00"
+
+
+def test_format_inr_handles_negative_amounts():
+    assert format_inr(Decimal("-2500")) == "₹-2,500.00"
+
+
+def test_format_inr_falls_back_for_non_numeric_input():
+    assert format_inr(None) == ""
+    assert format_inr("not a number") == "not a number"

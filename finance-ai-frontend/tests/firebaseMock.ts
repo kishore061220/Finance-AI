@@ -74,7 +74,29 @@ const signInWithPopup = vi.fn(
   },
 )
 
+/**
+ * Redirect sign-in never resolves in the app: the page navigates away, and
+ * `getRedirectResult` completes the flow on the next load. The mock mirrors
+ * that by resolving immediately and leaving `getRedirectResult` (below) to
+ * decide the outcome.
+ */
+const signInWithRedirect = vi.fn(async (_auth: unknown, _provider: unknown) => {})
+
+let redirectResult: { user: FakeFirebaseUser } | null = null
+let redirectError: unknown = null
+
+const getRedirectResult = vi.fn(async (_auth: unknown) => {
+  if (redirectError) throw redirectError
+  if (redirectResult) {
+    user = redirectResult.user
+    notify()
+  }
+  return redirectResult
+})
+
 const GoogleAuthProvider = vi.fn(() => ({}))
+
+const sendPasswordResetEmail = vi.fn(async (_auth: unknown, _email: string) => {})
 
 function onIdTokenChanged(
   _auth: unknown,
@@ -116,17 +138,32 @@ export const fb = {
     notify()
   },
 
+  /** Arrange the outcome of a redirect-based sign-in completion. */
+  setRedirectResult(next: { user: Partial<FakeFirebaseUser> } | null) {
+    redirectResult = next ? { user: makeUser(next.user) } : null
+  },
+
+  /** Arrange a failure reported by `getRedirectResult` on page load. */
+  setRedirectError(error: unknown) {
+    redirectError = error
+  },
+
   reset() {
     configured = false
     projectId = 'finance-ai-test'
     token = 'signed-in-token'
     user = null
     observers = []
+    redirectResult = null
+    redirectError = null
     signInWithEmailAndPassword.mockClear()
     createUserWithEmailAndPassword.mockClear()
     updateProfile.mockClear()
     signOut.mockClear()
     signInWithPopup.mockClear()
+    signInWithRedirect.mockClear()
+    getRedirectResult.mockClear()
+    sendPasswordResetEmail.mockClear()
   },
 
   onIdTokenChanged,
@@ -135,6 +172,9 @@ export const fb = {
   updateProfile,
   signOut,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  sendPasswordResetEmail,
   GoogleAuthProvider,
 }
 
@@ -147,6 +187,9 @@ export function authModule() {
     updateProfile,
     signOut,
     signInWithPopup,
+    signInWithRedirect,
+    getRedirectResult,
+    sendPasswordResetEmail,
     GoogleAuthProvider,
   }
 }

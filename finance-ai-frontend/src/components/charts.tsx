@@ -94,7 +94,7 @@ export function MonthlyTrendChart({ data }: { data: MonthlyTrend[] }) {
         <LineChart data={rows}>
           <CartesianGrid stroke="#26304f" strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="label" stroke="#8b95b0" fontSize={12} />
-          <YAxis stroke="#8b95b0" fontSize={12} tickFormatter={(v: number) => `$${v}`} />
+          <YAxis stroke="#8b95b0" fontSize={12} tickFormatter={(v: number) => formatCompactCurrency(v)} />
           <Tooltip content={<MoneyTooltip />} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           <Line type="monotone" dataKey="income" name="Income" stroke={PALETTE[0]} strokeWidth={2} dot={false} />
@@ -235,7 +235,7 @@ export function ForecastArea({
           </defs>
           <CartesianGrid stroke="#26304f" strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="label" stroke="#8b95b0" fontSize={12} />
-          <YAxis stroke="#8b95b0" fontSize={12} tickFormatter={(v: number) => `$${v}`} />
+          <YAxis stroke="#8b95b0" fontSize={12} tickFormatter={(v: number) => formatCompactCurrency(v)} />
           <Tooltip content={<MoneyTooltip />} />
           <Area type="monotone" dataKey="high" name="Upper range" stroke="none" fill="url(#rangeFill)" />
           <Area type="monotone" dataKey="expense" name="Actual" stroke="#35c98b" strokeWidth={2} fill="none" />

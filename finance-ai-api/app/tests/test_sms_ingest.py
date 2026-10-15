@@ -168,6 +168,18 @@ class TestIdempotencyAndDedup:
         listing = client.get("/api/transactions", headers=auth).json()
         assert listing["total"] == 1
 
+    def test_identical_body_for_two_users_is_two_rows(self, client, auth, other_auth):
+        # Deduplication is per-user; one user's message must never collapse
+        # another's into the same row.
+        alice = client.post("/api/sms/messages", headers=auth, json=VALID).json()
+        bob = client.post(
+            "/api/sms/messages",
+            headers=other_auth,
+            json={"client_msg_id": "bob-same-body", "body": DEBIT_SMS},
+        ).json()
+        assert bob["id"] != alice["id"]
+        assert bob["user_id"] != alice["user_id"]
+
     def test_identical_body_from_another_id_is_deduplicated(self, client, auth):
         first = client.post("/api/sms/messages", headers=auth, json=VALID)
         second = client.post(
@@ -201,6 +213,77 @@ class TestIdempotencyAndDedup:
         assert retried.json()["id"] == failed.json()["id"]
         assert retried.json()["status"] == "SAVED"
         assert client.get("/api/transactions", headers=auth).json()["total"] == 1
+
+
+class TestStateGuards:
+    def test_cannot_confirm_an_invalid_message(self, client, auth):
+        message_id = client.post(
+            "/api/sms/messages",
+            headers=auth,
+            json={"client_msg_id": "otp-guard", "body": OTP_SMS},
+        ).json()["id"]
+        response = client.post(f"/api/sms/messages/{message_id}/confirm", headers=auth)
+        assert response.status_code == 422
+
+    def test_cannot_reject_an_invalid_message(self, client, auth):
+        message_id = client.post(
+            "/api/sms/messages",
+            headers=auth,
+            json={"client_msg_id": "otp-guard-2", "body": OTP_SMS},
+        ).json()["id"]
+        response = client.post(f"/api/sms/messages/{message_id}/reject", headers=auth)
+        assert response.status_code == 422
+
+    def test_reject_records_the_supplied_reason(self, client, auth):
+        message_id = client.post(
+            "/api/sms/messages",
+            headers=auth,
+            json={"client_msg_id": "low-reason", "body": LOW_CONFIDENCE_SMS},
+        ).json()["id"]
+        response = client.post(
+            f"/api/sms/messages/{message_id}/reject",
+            headers=auth,
+            json={"reason": "This is my personal number"},
+        )
+        assert response.status_code == 200
+        assert response.json()["rejection_reason"] == "This is my personal number"
+
+
+class TestRequestValidation:
+    def test_body_over_the_maximum_length_is_rejected(self, client, auth):
+        response = client.post(
+            "/api/sms/messages",
+            headers=auth,
+            json={"client_msg_id": "too-long", "body": "a" * 4001},
+        )
+        assert response.status_code == 422
+
+    def test_body_at_the_maximum_length_is_accepted(self, client, auth):
+        response = client.post(
+            "/api/sms/messages",
+            headers=auth,
+            json={"client_msg_id": "max-long", "body": "a" * 4000},
+        )
+        assert response.status_code == 201
+
+    def test_blank_client_msg_id_is_rejected(self, client, auth):
+        response = client.post(
+            "/api/sms/messages", headers=auth, json={"client_msg_id": "", "body": DEBIT_SMS}
+        )
+        assert response.status_code == 422
+
+    def test_unparseable_received_at_is_rejected(self, client, auth):
+        response = client.post(
+            "/api/sms/messages",
+            headers=auth,
+            json={"client_msg_id": "bad-date", "body": DEBIT_SMS, "received_at": "not-a-date"},
+        )
+        assert response.status_code == 422
+
+    def test_missing_received_at_defaults_to_now(self, client, auth):
+        response = client.post("/api/sms/messages", headers=auth, json=VALID)
+        assert response.status_code == 201
+        assert response.json()["received_at"] is not None
 
 
 class TestReceivedAtNormalisation:
