@@ -1,0 +1,431 @@
+% ---------------------------------------------------------------------------
+% Conference paper draft - Finance-AI fraud model.
+%
+% Compile with the IEEEtran class (IEEE conference format):
+%     pdflatex paper.tex
+%     pdflatex paper.tex   (twice, for references)
+%
+% AUTHORS ARE PLACEHOLDERS - replace every bracketed field before submission.
+%
+% Every number in this paper is reproduced from the repository's own pipeline
+% (see Section IX and docs/DATASET.md). No result here is estimated,
+% extrapolated, or copied from an unrelated source.
+% ---------------------------------------------------------------------------
+\documentclass[conference]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+
+\begin{document}
+
+\title{Feature-Starved Fraud Detection: An Honest Evaluation of a\\
+Transaction-Level Classifier Under a Production Scoring Contract}
+
+\author{
+\IEEEauthorblockN{[Author Name]}
+\IEEEauthorblockA{[Department]\\
+[Institution]\\
+[City, Country]\\
+[email@example.com]}
+\and
+\IEEEauthorblockN{[Co-Author Name]}
+\IEEEauthorblockA{[Department]\\
+[Institution]\\
+[City, Country]\\
+[email@example.com]}
+}
+
+\maketitle
+
+\begin{abstract}
+Machine-learned transaction fraud detection is routinely reported with
+near-perfect metrics, but those figures usually depend on features---PCA
+components, merchant identities, counterparty graphs---that a live scoring
+service may not be able to compute. This paper studies the practical
+consequence of that gap. We train and compare three classifiers
+(logistic regression, random forest, and gradient-boosted trees) on a real,
+publicly documented fraud label set (the ULB/Worldline credit-card dataset,
+OpenML id 1597), using \emph{only} the features that a production scoring
+contract can supply at decision time: amount, cyclical time-of-day, and
+coarse categorical flags. The PCA components (\texttt{V1}--\texttt{V28}) that
+carry most of the source signal are deliberately excluded because the serving
+path cannot reproduce them. We report two evaluations. Under a stratified
+hold-out, the best model (random forest) reaches ROC-AUC $0.7577$ and
+precision--recall AUC (PR-AUC) $0.0866$, roughly $53\times$ the $0.164\%$
+base rate. Under a \emph{chronological} hold-out---the stricter, more
+realistic protocol---PR-AUC collapses to $\approx 0.002$, barely above the
+base rate, even though ROC-AUC stays near $0.66$--$0.68$. We argue that the
+chronological figure is the honest headline, that the model is best deployed
+as a weak secondary signal behind a deterministic rule engine, and that
+reporting both splits is necessary to avoid overstating fraud-detection
+performance. All results are reproducible from the released pipeline, and the
+trained artifact is integrity-checked with a SHA-256 digest.
+\end{abstract}
+
+\begin{IEEEkeywords}
+fraud detection, imbalanced classification, precision--recall, temporal
+validation, feature engineering, reproducibility, random forest, XGBoost
+\end{IEEEkeywords}
+
+\section{Introduction}
+\IEEEPARstart{T}{ransaction} fraud detection is one of the most cited
+applications of machine learning in finance, and published studies frequently
+report AUCs above $0.95$. Those numbers are usually obtained on
+anonymised benchmarks whose strongest predictors are principal components or
+aggregate behavioural variables unavailable to the system actually making the
+decision. When the same model is moved behind a real scoring API, the
+available features shrink, and the reported performance no longer describes
+the deployed system.
+
+This paper is a deliberately narrow, honest case study. We ask a single
+question: \emph{how well can a transaction-level fraud classifier perform
+when restricted to the features a production scoring contract can actually
+compute?} We answer it on a real, documented dataset, with two evaluation
+protocols, and we report the less flattering protocol as the headline.
+
+Our contributions are:
+\begin{itemize}
+\item A feature set of 31 interpretable features that are computable at
+scoring time from raw transaction fields (amount, timestamp, type, category,
+merchant, source), with no future information and no label leakage
+(Section~IV).
+\item A comparison of three standard classifiers under identical splits and
+preprocessing, selected by precision--recall AUC rather than accuracy
+(Sections~VI--VII).
+\item A stratified-versus-chronological contrast that quantifies how much a
+random split flatters the model, and an explicit statement of the deployment
+role the model can honestly fill (Sections~VII--VIII).
+\item A fully reproducible pipeline whose exported artifact is verified by
+SHA-256 digest (Section~IX).
+\end{itemize}
+
+We do not claim a production-grade detector. We claim a rigorously measured
+\emph{weak} signal, and we show why that measurement is the useful one.
+
+\section{Related Work}
+Credit-card fraud detection on highly imbalanced data is well studied. The
+dataset we use originates from Dal Pozzolo et al.~\cite{dalpozzolo2015}, who
+also discuss undersampling calibration for unbalanced problems. Class
+imbalance is central to this literature: resampling methods such as
+SMOTE~\cite{chawla2002} are common, and the choice of metric is known to
+matter greatly. Davis and Goadrich~\cite{davis2006} established the
+relationship between precision--recall and ROC curves, and Saito and
+Rehmsmeier~\cite{saito2015} showed that PR curves are more informative than
+ROC curves on imbalanced data---the reason we select models by PR-AUC.
+Fawcett~\cite{fawcett2006} gives the standard treatment of ROC analysis.
+For the learners, we use logistic regression, random
+forests~\cite{breiman2001}, and gradient-boosted trees~\cite{chen2016}. At a
+higher level, anomaly-detection surveys~\cite{chandola2009} place fraud in the
+broader family of rare-event detection, and Sculley et
+al.~\cite{sculley2015} describe how train/serve feature skew---the exact
+failure mode our parity tests guard against---accumulates real technical debt.
+Unlike work that reports only the in-distribution split, we foreground the
+temporal split, which better reflects deployment.
+
+\section{System and Scoring Contract}
+The detector is one component of an end-to-end personal-finance platform with
+a Python/FastAPI backend, a relational store, and web and mobile clients. For
+this paper, only the scoring contract matters.
+
+\subsection{The 31-Feature Contract}
+Scoring consumes a fixed 31-dimensional vector built from raw transaction
+fields by \texttt{app.ml.features.build\_feature\_vector}. The offline
+training package (\texttt{finance\_ai\_ml}) reproduces the same 31 features
+with the same names. The two implementations intentionally order the columns
+differently---the service in semantic order, the offline package
+alphabetically---so the exported model artifact records its own feature order
+and scoring projects the input vector onto \emph{that} recorded order
+($\text{pred}\leftarrow f(x[\text{name}])$ for each recorded name). A rename
+on one side only would silently drop a column and degrade every score, so the
+repository ships automated parity tests that assert both the \emph{names} and
+the \emph{values} agree; a drifted column set is treated as a hard error, not
+a warning.
+
+\subsection{Rule Engine and Model Blend}
+A deterministic rule engine provides the first line of defence and is always
+available. When a trained model is present, the final score is a weighted
+blend
+\begin{equation}
+\text{combined} = \mathrm{round}\!\left(0.7\cdot \text{rule} +
+0.3\cdot \text{ml}\right),
+\end{equation}
+clamped to $[0,100]$, and the rule verdict acts as a floor:
+$\text{effective} = \max(\text{combined},\,\text{rule})$. A transaction the
+rules flag is therefore never unflagged by the model. This design encodes the
+expectation---borne out by Section~VII---that the model is a \emph{secondary}
+signal.
+
+\section{Feature Engineering}
+All 31 features are computed from fields available at scoring time. They fall
+into four families.
+
+\paragraph{Amount (7 features).}
+Raw amount; logarithmic and square-root transforms
+(\texttt{amount\_log}, \texttt{amount\_sqrt}) to compress the heavy right
+tail; and three relative features computed against the transaction owner's own
+mean amount: the ratio \texttt{amount\_vs\_mean}, its deviation
+\texttt{amount\_deviation} (ratio~$-1$), and a binary
+\texttt{is\_amount\_outlier} (ratio $>3$). A binary
+\texttt{is\_round\_amount} captures the common ``round-number'' fraud
+signature (amount $\ge 100$ and divisible by $100$).
+
+\paragraph{Temporal (14 features).}
+The hour is encoded cyclically as \texttt{hour\_sin}/\texttt{hour\_cos} so
+that $23{:}00$ and $00{:}00$ are adjacent; \texttt{weekday} is ordinal, with a
+seven-way one-hot (\texttt{dow\_0}--\texttt{dow\_6}) and an
+\texttt{is\_weekend} flag. A binary \texttt{is\_night} marks
+$22{:}00$--$06{:}00$; \texttt{day\_of\_month} and \texttt{month} are included
+as-is.
+
+\paragraph{Categorical (8 features).}
+One-hot indicators for transaction type
+(\texttt{is\_expense}, \texttt{is\_income}) and source
+(\texttt{source\_manual}, \texttt{source\_ocr}, \texttt{source\_sms}), an
+EMI flag (\texttt{is\_emi}), and presence flags
+\texttt{category\_known} and \texttt{merchant\_known}.
+
+\paragraph{Behavioural aggregates (2 features).}
+\texttt{merchant\_tx\_count} (how often this user has transacted with this
+merchant) and \texttt{user\_tx\_count} (how many transactions this user has).
+These are computed over the same static dataset and therefore, on a single
+pseudo-user, are near-constant (see Section~VIII).
+
+\paragraph{Leakage controls.}
+The train/test split is taken \emph{before} any preprocessing is fitted; the
+linear model's \texttt{StandardScaler} lives inside a scikit-learn
+\texttt{Pipeline} and is fitted on the training fold only; class imbalance is
+handled at the estimator, never by resampling the test set; and
+\texttt{amount\_vs\_mean} uses the user's overall mean, matching the serving
+path so no future window leaks into a training row.
+
+\section{Dataset}
+We use the ULB/Worldline \emph{Credit Card Fraud Detection} dataset distributed
+via OpenML (data id 1597)~\cite{vanschoren2014,dalpozzolo2015}. It is a real,
+documented, anonymised label set: 284{,}807 transactions, of which 492 are
+confirmed fraud ($0.172\%$). Each row carries a timestamp (\texttt{Time}), an
+amount (\texttt{Amount}), the label (\texttt{Class}), and 28
+privacy-protecting PCA components (\texttt{V1}--\texttt{V28}).
+
+\paragraph{Why the PCA components are dropped.}
+\texttt{V1}--\texttt{V28} are not reconstructable into merchant, category, or
+counterparty fields, and the production scoring contract cannot produce them.
+A model that relied on them would be unscorable against a live transaction.
+They are therefore excluded---the deliberate cause of the ``feature
+starvation'' analysed below.
+
+\paragraph{Mapping and cleaning.}
+\texttt{Time} is mapped to a timestamp ($2013\text{-}09\text{-}01$ UTC $+$
+seconds); \texttt{Amount} is unchanged; \texttt{Class} becomes the label.
+Every other training field takes its documented default (single synthetic
+user, \texttt{expense}, uncategorised). Rows with non-positive or
+non-numeric amounts are dropped by the pipeline's standard rule, removing
+1{,}825 rows including 27 zero-amount frauds, leaving 282{,}982 rows and 465
+positives ($0.1643\%$). Table~\ref{tab:data} summarises the data.
+
+\begin{table}[t]
+\centering
+\caption{Dataset after acquisition and the positive-amount cleaning rule.}
+\label{tab:data}
+\begin{tabular}{@{}ll@{}}
+\hline
+\textbf{Field} & \textbf{Value} \\
+\hline
+Source & OpenML id 1597 (ULB / Worldline) \\
+Raw rows & 284{,}807 ($492$ fraud, $0.172\%$) \\
+Modelled rows & 282{,}982 ($465$ positives, $0.1643\%$) \\
+Rows dropped (amount $\le 0$) & 1{,}825 (incl.\ 27 frauds) \\
+Date span & 2013-09-01 $\to$ 2013-09-02 \\
+Amount (min / mean / max) & 0.01 / 88.92 / 25{,}691.16 \\
+Exact duplicate rows & 4{,}822 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Experimental Setup}
+\paragraph{Candidates.}
+Three estimators are compared under identical splits and preprocessing:
+\begin{itemize}
+\item \textbf{Logistic regression (LR)}: \texttt{StandardScaler} followed by
+\texttt{LogisticRegression(max\_iter=2000, class\_weight=balanced)} in one
+pipeline.
+\item \textbf{Random forest (RF)}: 400 trees, \texttt{min\_samples\_leaf=2},
+\texttt{class\_weight=balanced\_subsample}.
+\item \textbf{Gradient boosting (XGB)}: 200 estimators, depth 4, learning rate
+0.05, subsample 0.9, column subsample 0.9, $\lambda=1.0$, with
+\texttt{scale\_pos\_weight}$\,=\,(1-p)/p$ to counter the imbalance.
+\end{itemize}
+The decision threshold is $0.5$ throughout.
+
+\paragraph{Splits.}
+A fixed $20\%$ hold-out is used, under two protocols:
+\emph{stratified} (random, class-balanced) and \emph{chronological} (oldest
+$80\%$ train, newest $20\%$ test, no shuffling). The random seed is fixed
+(42), so a rerun reproduces the numbers exactly.
+
+\paragraph{Metrics.}
+We report ROC-AUC, PR-AUC (average precision), precision, recall, F1, and the
+raw false-positive count. Models are \emph{selected} by PR-AUC---the correct
+choice when positives are under $1\%$~\cite{saito2015}.
+
+\section{Results}
+\subsection{Stratified hold-out}
+The stratified test set contains 56{,}597 rows with 93 positives (prevalence
+$0.164\%$). Table~\ref{tab:strat} reports the results. Random forest attains
+the best PR-AUC ($0.0866$); XGBoost has the highest ROC-AUC ($0.8278$) but a
+materially worse PR-AUC ($0.0544$) at threshold $0.5$, which is why the
+selection metric is PR-AUC. At the $0.164\%$ base rate, PR-AUC $0.0866$ is
+roughly $53\times$ random ranking. Even so, precision is $2.13\%$: the model
+that catches a third of frauds also raises 1{,}424 false positives.
+
+\begin{table}[t]
+\centering
+\caption{Stratified $20\%$ hold-out (56{,}597 rows, 93 positives).
+Selected model in bold.}
+\label{tab:strat}
+\begin{tabular}{@{}lcccccr@{}}
+\hline
+\textbf{Model} & \textbf{ROC-AUC} & \textbf{PR-AUC} & \textbf{Prec.} &
+\textbf{Rec.} & \textbf{F1} & \textbf{FP} \\
+\hline
+LR  & 0.6844 & 0.0044 & 0.0031 & 0.6129 & 0.0061 & 18{,}472 \\
+\textbf{RF}  & 0.7577 & \textbf{0.0866} & 0.0213 & 0.3333 & 0.0401 & 1{,}424 \\
+XGB & 0.8278 & 0.0544 & 0.0065 & 0.6882 & 0.0129 & 9{,}759 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Chronological hold-out}
+The chronological test set contains 56{,}597 rows with 70 positives. As
+Table~\ref{tab:chrono} shows, performance collapses. The best PR-AUC is
+$0.0023$---barely above the base rate ($70/56{,}597\approx 0.124\%$). Random
+forest flags nothing at threshold $0.5$; the others achieve moderate recall
+only by accepting thousands of false positives. ROC-AUC nevertheless remains
+near $0.66$--$0.68$, which is the tell-tale signature of a classifier that
+\emph{ranks} slightly better than chance but cannot separate a rare positive
+class with any practical precision.
+
+\begin{table}[t]
+\centering
+\caption{Chronological $20\%$ hold-out (56{,}597 rows, 70 positives).}
+\label{tab:chrono}
+\begin{tabular}{@{}lccccr@{}}
+\hline
+\textbf{Model} & \textbf{ROC-AUC} & \textbf{PR-AUC} & \textbf{Rec.} &
+\textbf{F1} & \textbf{FP} \\
+\hline
+LR  & 0.6538 & 0.0023 & 0.1571 & 0.0032 & 6{,}702 \\
+RF  & 0.6626 & 0.0021 & 0.0000 & 0.0000 & 0 \\
+XGB & 0.6827 & 0.0022 & 0.2429 & 0.0052 & 6{,}442 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Interpretation}
+The stratified split is flattering partly because a random partition lets
+near-duplicate transactions (4{,}822 byte-identical rows exist) fall on both
+sides of the split. The chronological split, which forbids that leakage,
+is the honest estimate of forward-looking performance. We therefore treat
+PR-AUC $\approx 0.002$ as the headline and the $53\times$ lift as an
+upper, in-distribution bound. This is consistent with deploying the model at
+only $30\%$ weight behind a rule engine (Section~III-B).
+
+\section{Discussion and Limitations}
+The modest numbers are explained, not excused, by the following:
+
+\begin{itemize}
+\item \textbf{Feature starvation (dominant).} The signal that makes this
+dataset separable lives in \texttt{V1}--\texttt{V28}, which the serving
+contract cannot supply. Only amount and time-of-day reach the model.
+\item \textbf{Distribution shift.} All rows share one synthetic user, so
+\texttt{amount\_vs\_mean}, \texttt{merchant\_tx\_count}, and
+\texttt{user\_tx\_count} are computed over a single pseudo-user; a real
+user's per-transaction baseline differs.
+\item \textbf{No merchant/category signal.} The source lacks merchant and
+category values, so those one-hot features are constant and carry no weight.
+\item \textbf{Zero-amount frauds dropped.} 27 of 492 frauds have amount $0$
+and are removed by the positive-amount rule; this bias is unavoidable without
+fabricating amounts.
+\item \textbf{Two-day window.} \texttt{month} and \texttt{day\_of\_month} take
+almost no range, and weekly seasonality is unrepresented.
+\end{itemize}
+
+\paragraph{What the pipeline does prove.}
+That a real model can be trained, evaluated, selected, exported, and scored
+end-to-end on real labels, with integrity checking and train/serve parity
+enforced by tests. A production-grade detector would require data that
+exposes merchant, category, and counterparty features \emph{at scoring time}.
+
+\section{Reproducibility}
+The dataset is public and is not redistributed with the pipeline. It is
+acquired and mapped by a documented script, then compared:
+\begin{quote}
+\small\ttfamily
+python scripts/prepare\_ulb\_creditcard.py --work-dir ./ulb\\
+python -m finance\_ai\_ml compare ./ulb/ulb\_creditcard.csv\\
+\hspace*{1em}--split \{stratified|chronological\}
+\end{quote}
+The experiments reported here were reproduced with Python 3.14.0, NumPy
+2.5.2, pandas 3.0.5, scikit-learn 1.9.0, and XGBoost 3.4.1, and matched the
+recorded metrics to four decimal places (including exact false-positive
+counts). The exported artifact records its feature order, an artifact-format
+version, and a SHA-256 digest of the model binary; the digest was independently
+recomputed and matched
+(\texttt{734b52d3\ldots a3b24}). Random seeds, thresholds, and the
+preprocessing policy are fixed in a single configuration object, so a rerun
+reproduces the same model.
+
+\paragraph{Note on the deployed artifact.}
+The shipped artifact corresponds to the \emph{stratified} selection
+(random forest, PR-AUC $0.0866$). Because the chronological estimate is far
+lower, the model is documented and used as a weak secondary signal; the
+serving blend and the rule-floor guarantee in Section~III-B are part of that
+honest posture.
+
+\section{Conclusion}
+Restricting a fraud classifier to the features a production system can
+compute at decision time changes the story entirely. On a real, documented
+dataset, a random forest reaches PR-AUC $0.0866$ under a stratified hold-out
+but only $\approx 0.002$---near the base rate---under a chronological
+hold-out, despite ROC-AUC staying near $0.66$--$0.68$. We argue that the
+chronological number is the one to report, that PR-AUC (not accuracy or ROC)
+should drive selection, and that such a model belongs behind a deterministic
+rule engine rather than in front of one. The full pipeline reproduces these
+numbers exactly and integrity-checks its output, so the results are auditable
+rather than asserted.
+
+\begin{thebibliography}{00}
+\bibitem{dalpozzolo2015} A.~Dal Pozzolo, O.~Caelen, R.~A. Johnson, and
+G.~Bontempi, ``Calibrating probability with undersampling for unbalanced
+classification,'' in \emph{Proc. IEEE Symp. Series on Computational
+Intelligence (SSCI)}, 2015.
+\bibitem{chawla2002} N.~V. Chawla, K.~W. Bowyer, L.~O. Hall, and
+W.~P. Kegelmeyer, ``SMOTE: Synthetic minority over-sampling technique,''
+\emph{Journal of Artificial Intelligence Research}, vol.~16, pp.~321--357,
+2002.
+\bibitem{davis2006} J.~Davis and M.~Goadrich, ``The relationship between
+precision--recall and ROC curves,'' in \emph{Proc. Int. Conf. Machine Learning
+(ICML)}, 2006.
+\bibitem{saito2015} T.~Saito and M.~Rehmsmeier, ``The precision--recall plot
+is more informative than the ROC plot when evaluating binary classifiers on
+imbalanced datasets,'' \emph{PLoS ONE}, vol.~10, no.~3, 2015.
+\bibitem{fawcett2006} T.~Fawcett, ``An introduction to ROC analysis,''
+\emph{Pattern Recognition Letters}, vol.~27, no.~8, pp.~861--874, 2006.
+\bibitem{breiman2001} L.~Breiman, ``Random forests,'' \emph{Machine
+Learning}, vol.~45, no.~1, pp.~5--32, 2001.
+\bibitem{chen2016} T.~Chen and C.~Guestrin, ``XGBoost: A scalable tree
+boosting system,'' in \emph{Proc. ACM SIGKDD Int. Conf. Knowledge Discovery
+and Data Mining (KDD)}, 2016.
+\bibitem{chandola2009} V.~Chandola, A.~Banerjee, and V.~Kumar, ``Anomaly
+detection: A survey,'' \emph{ACM Computing Surveys}, vol.~41, no.~3, 2009.
+\bibitem{sculley2015} D.~Sculley \emph{et al.}, ``Hidden technical debt in
+machine learning systems,'' in \emph{Advances in Neural Information Processing
+Systems (NeurIPS)}, 2015.
+\bibitem{vanschoren2014} J.~Vanschoren, J.~N. van Rijn, B.~Bischl, and
+L.~Torgo, ``OpenML: Networked science in machine learning,'' \emph{SIGKDD
+Explorations}, vol.~15, no.~2, pp.~49--60, 2014.
+\end{thebibliography}
+
+\end{document}

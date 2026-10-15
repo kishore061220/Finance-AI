@@ -1,0 +1,96 @@
+# Firebase Setup Guide
+
+This document describes how to enable real Firebase Authentication so clients can sign in against a Firebase-backed server. It covers API configuration, web and mobile client configuration, verification steps, and how to detect common project mismatches.
+
+## Prerequisites
+- A Firebase project in the Firebase Console
+- Firebase Authentication enabled (Email/Password and/or Google as needed)
+- For web: the Firebase web app config (public)
+- For mobile (Android): `google-services.json` in `android/app/`
+
+## Backend (finance-ai-api)
+
+The API verifies Firebase ID tokens using the Firebase Admin SDK. Set the following in `finance-ai-api/.env` (do not commit `.env`):
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `FIREBASE_PROJECT_ID` | Yes | The Firebase project the server verifies against. |
+| `FIREBASE_CREDENTIALS_PATH` | One of these | Path to a service account JSON file. |
+| `FIREBASE_CREDENTIALS_JSON` | One of these | Raw JSON of a service account. The path takes precedence. |
+| `ALLOW_DEV_AUTH` | No | Must be `false` in production and is automatically ignored when Firebase is configured. |
+
+Current state (verified 2026-10-11):
+- `FIREBASE_PROJECT_ID=finance-fd3f3` is set in `finance-ai-api/.env` (a project id is
+  not secret). `firebase_enabled` stays `false` until a service account is supplied,
+  so the server still uses the dev token provider and real requests are 401
+  (not faked).
+
+When Firebase is configured, the server sets:
+- `settings.firebase_enabled = true`
+- `GET /api/auth/config` returns `provider = "firebase"`, `firebase_enabled = true`, and `project_id = FIREBASE_PROJECT_ID` (or `null` if not set)
+
+When Firebase is not configured, dev auth may only be active if explicitly allowed; however, this client only offers Firebase sign-in.
+
+## Web (finance-ai-frontend)
+
+The web client is Firebase-only. Set the following in `finance-ai-frontend/.env.local` (not committed):
+
+| Variable | Required |
+| --- | --- |
+| `VITE_FIREBASE_API_KEY` | Yes |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Yes |
+| `VITE_FIREBASE_PROJECT_ID` | Yes |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Yes |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Yes |
+| `VITE_FIREBASE_APP_ID` | Yes |
+
+Notes:
+- These are public values. Restrict HTTP referrers in the Firebase Console.
+- `firebaseProjectId()` reads the configured project and is compared against `config.project_id` from `/api/auth/config`. Mismatches produce a visible warning and prevent "working" sign-in from 401ing later.
+- `onIdTokenChanged` drives session adoption and token refresh.
+
+## Mobile (React Native)
+
+Android requires `android/app/google-services.json`. iOS requires `GoogleService-Info.plist` per standard Firebase RN setup.
+
+Current state (verified 2026-10-11): `android/app/google-services.json` for project
+`finance-fd3f3` / package `com.financeai` is present and gitignored. The Google
+Services Gradle plugin (`com.google.gms.google-services` 4.4.4) is applied when the
+file exists, and `gradlew :app:assembleDebug` succeeds with Firebase enabled.
+
+- If the file is missing, the app cannot initialize Firebase and will show a notice that sign-in is not available (no developer fallback).
+- The session subscribes to `onIdTokenChanged` (Firebase Auth) so refreshed tokens are adopted without a sign-out/in.
+- Project consistency: `firebaseProjectId()` reads the configured project; if `config.project_id` differs, the UI warns.
+- Push (FCM): after a successful device registration the client subscribes to `onTokenRefresh` and re-registers a rotated token; sign-out calls `DELETE /api/notifications/devices?token=...` while the auth token is still valid, so the handset does not keep receiving the previous account's alerts. The server deactivates a token that FCM reports as permanently unregistered.
+
+## Verification (no fabrication)
+
+1. API: `cd finance-ai-api && .venv\Scripts\python.exe -m pytest -q` → 306 passed.
+2. ML: `cd finance-ai-ml && ..\finance-ai-api\.venv\Scripts\python.exe -m pytest -q` → 81 passed.
+3. Web: `cd finance-ai-frontend && npx vitest run` → 104 passed; `npm run typecheck`, `npm run lint` clean.
+4. Mobile: `cd C:\Projects\Finance-AI && npx jest --no-coverage` → 60 passed; `npm run typecheck` clean, `npm run lint` produces only style warnings.
+
+To test real Firebase end-to-end (BLOCKED if credentials missing):
+- Ensure the API runs with Firebase configured and `ALLOW_DEV_AUTH=false`. Do not point at the live `finance_ai` database for ad-hoc destructive E2E writes; use the controlled P2 path with `finance_ai_e2e`.
+- Web builds with matching `VITE_FIREBASE_*`. Sign in with Email/Password or Google. `GET /api/auth/me` returns 200 and provisions the user (by Firebase UID). Token refresh occurs without explicit re-login.
+- Mobile with matching `google-services.json` behaves the same.
+- A mismatch (different `project_id`) is detected and blocks successful operation as designed.
+
+Do not invent tokens or mark Firebase as verified without running these steps against real credentials.
+
+## Remaining manual steps (environment variables to supply)
+
+Web (`finance-ai-frontend/.env.local`, not committed): the six `VITE_FIREBASE_*`
+values from the console Web app config for project `finance-fd3f3`
+(`VITE_FIREBASE_PROJECT_ID=finance-fd3f3`). Until this file exists the login screen
+shows the setup notice (104-unit-test path still passes).
+
+API (`finance-ai-api/.env`): download the service-account JSON from Console →
+Project settings → Service accounts → Firebase Admin SDK → "Generate new private
+key", then set either `FIREBASE_CREDENTIALS_PATH` (recommended) or
+`FIREBASE_CREDENTIALS_JSON`. Then set `ALLOW_DEV_AUTH=false` (and `APP_ENV=production`
+with a `SECRET_KEY` when deployed). The server then reports `provider=firebase` and
+rejects any token issued by a different project.
+
+Android: done for `finance-fd3f3`. To test on a device, set
+`API_BASE_URL_OVERRIDE` in `src/config.ts` to the host machine's LAN address.

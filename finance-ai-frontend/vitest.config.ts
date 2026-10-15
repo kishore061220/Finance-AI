@@ -40,10 +40,10 @@ export default mergeConfig(
        * environment rather than on the assertion. That produced a failure that
        * passed on every subsequent run - a flake, not a defect. The timeout is
        * raised rather than the assertion weakened: nothing here waits on a real
-       * network, so a test that needs more than 20s is genuinely stuck.
+       * network, so a test that needs more than 30s is genuinely stuck.
        */
-      testTimeout: 20000,
-      hookTimeout: 20000,
+      testTimeout: 30000,
+      hookTimeout: 30000,
     },
   }),
 )

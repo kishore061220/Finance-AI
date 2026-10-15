@@ -43,7 +43,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      # v3 declares `runs.using: node20`; GitHub now forces Node 20 actions onto
+      # Node 24, which breaks v3's bundle before any SDK step runs. v4 is the
+      # upstream fix (migrated to `runs.using: node24`). No Gradle/JDK/SDK change.
+      - uses: android-actions/setup-android@v4
 
       - name: Cache Gradle
         uses: actions/cache@v4

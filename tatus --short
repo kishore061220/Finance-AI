@@ -1,0 +1,311 @@
+warning: in the working copy of 'App.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'android/app/src/main/AndroidManifest.xml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'android/app/src/main/java/com/financeai/MainApplication.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/firebase-setup.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/verification.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'finance-ai-api/app/models/__init__.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'finance-ai-api/app/routes/transactions.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'finance-ai-api/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/screens/DashboardScreen.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/services/endpoints.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/types.ts', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/App.tsx b/App.tsx[m
+[1mindex 1886c6c..bbdc480 100644[m
+[1m--- a/App.tsx[m
+[1m+++ b/App.tsx[m
+[36m@@ -33,6 +33,7 @@[m [mimport MoreScreen from './src/screens/MoreScreen';[m
+ import ReportsScreen from './src/screens/ReportsScreen';[m
+ import FamilyScreen from './src/screens/FamilyScreen';[m
+ import AssistantScreen from './src/screens/AssistantScreen';[m
+[32m+[m[32mimport SmsAutoScreen from './src/screens/SmsAutoScreen';[m
+ [m
+ const AuthStack = createNativeStackNavigator();[m
+ const AppTab = createBottomTabNavigator();[m
+[36m@@ -64,6 +65,7 @@[m [mfunction MoreStack() {[m
+       <MoreStackNavigator.Screen name="Reports" component={ReportsScreen} />[m
+       <MoreStackNavigator.Screen name="Family" component={FamilyScreen} />[m
+       <MoreStackNavigator.Screen name="Assistant" component={AssistantScreen} />[m
+[32m+[m[32m      <MoreStackNavigator.Screen name="SmsAuto" component={SmsAutoScreen} />[m
+     </MoreStackNavigator.Navigator>[m
+   );[m
+ }[m
+[1mdiff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml[m
+[1mindex fb78f39..e049dc6 100644[m
+[1m--- a/android/app/src/main/AndroidManifest.xml[m
+[1m+++ b/android/app/src/main/AndroidManifest.xml[m
+[36m@@ -2,6 +2,18 @@[m
+ [m
+     <uses-permission android:name="android.permission.INTERNET" />[m
+ [m
+[32m+[m[32m    <!--[m
+[32m+[m[32m      Automatic bank-SMS detection.[m
+[32m+[m
+[32m+[m[32m      RECEIVE_SMS (not READ_SMS) is declared because the app only needs messages[m
+[32m+[m[32m      as they arrive; it never reads the SMS inbox. Google Play restricts this[m
+[32m+[m[32m      permission group, so the release build must file the Permissions[m
+[32m+[m[32m      Declaration Form and select the "SMS-based financial transactions" /[m
+[32m+[m[32m      "SMS-based money management" use case. Non-financial messages (OTP,[m
+[32m+[m[32m      promotions) are filtered on the device and never uploaded.[m
+[32m+[m[32m    -->[m
+[32m+[m[32m    <uses-permission android:name="android.permission.RECEIVE_SMS" />[m
+[32m+[m
+     <application[m
+       android:name=".MainApplication"[m
+       android:label="@string/app_name"[m
+[36m@@ -23,5 +35,22 @@[m
+             <category android:name="android.intent.category.LAUNCHER" />[m
+         </intent-filter>[m
+       </activity>[m
+[32m+[m
+[32m+[m[32m      <!--[m
+[32m+[m[32m        Bank-SMS receiver.[m
+[32m+[m
+[32m+[m[32m        Exported so the system can deliver `SMS_RECEIVED`, but locked down with[m
+[32m+[m[32m        `android:permission="android.permission.BROADCAST_SMS"`, which only the[m
+[32m+[m[32m        platform holds - no third-party app can spoof a broadcast to it.[m
+[32m+[m[32m      -->[m
+[32m+[m[32m      <receiver[m
+[32m+[m[32m        android:name=".sms.SmsReceiver"[m
+[32m+[m[32m        android:enabled="true"[m
+[32m+[m[32m        android:exported="true"[m
+[32m+[m[32m        android:permission="android.permission.BROADCAST_SMS">[m
+[32m+[m[32m        <intent-filter android:priority="999">[m
+[32m+[m[32m            <action android:name="android.provider.Telephony.SMS_RECEIVED" />[m
+[32m+[m[32m        </intent-filter>[m
+[32m+[m[32m      </receiver>[m
+     </application>[m
+ </manifest>[m
+[1mdiff --git a/android/app/src/main/java/com/financeai/MainApplication.kt b/android/app/src/main/java/com/financeai/MainApplication.kt[m
+[1mindex 3f2fdd0..57d8eaf 100644[m
+[1m--- a/android/app/src/main/java/com/financeai/MainApplication.kt[m
+[1m+++ b/android/app/src/main/java/com/financeai/MainApplication.kt[m
+[36m@@ -6,6 +6,7 @@[m [mimport com.facebook.react.ReactApplication[m
+ import com.facebook.react.ReactHost[m
+ import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative[m
+ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost[m
+[32m+[m[32mimport com.financeai.sms.SmsReceiverPackage[m
+ [m
+ class MainApplication : Application(), ReactApplication {[m
+ [m
+[36m@@ -14,8 +15,8 @@[m [mclass MainApplication : Application(), ReactApplication {[m
+       context = applicationContext,[m
+       packageList =[m
+         PackageList(this).packages.apply {[m
+[31m-          // Packages that cannot be autolinked yet can be added manually here, for example:[m
+[31m-          // add(MyReactNativePackage())[m
+[32m+[m[32m          // The SMS receiver bridge is not autolinked, so it is added by hand.[m
+[32m+[m[32m          add(SmsReceiverPackage())[m
+         },[m
+     )[m
+   }[m
+[1mdiff --git a/docs/firebase-setup.md b/docs/firebase-setup.md[m
+[1mindex 63fec1c..f0bd8c5 100644[m
+[1m--- a/docs/firebase-setup.md[m
+[1m+++ b/docs/firebase-setup.md[m
+[36m@@ -19,6 +19,12 @@[m [mThe API verifies Firebase ID tokens using the Firebase Admin SDK. Set the follow[m
+ | `FIREBASE_CREDENTIALS_JSON` | One of these | Raw JSON of a service account. The path takes precedence. |[m
+ | `ALLOW_DEV_AUTH` | No | Must be `false` in production and is automatically ignored when Firebase is configured. |[m
+ [m
+[32m+[m[32mCurrent state (verified 2026-10-11):[m
+[32m+[m[32m- `FIREBASE_PROJECT_ID=finance-fd3f3` is set in `finance-ai-api/.env` (a project id is[m
+[32m+[m[32m  not secret). `firebase_enabled` stays `false` until a service account is supplied,[m
+[32m+[m[32m  so the server still uses the dev token provider and real requests are 401[m
+[32m+[m[32m  (not faked).[m
+[32m+[m
+ When Firebase is configured, the server sets:[m
+ - `settings.firebase_enabled = true`[m
+ - `GET /api/auth/config` returns `provider = "firebase"`, `firebase_enabled = true`, and `project_id = FIREBASE_PROJECT_ID` (or `null` if not set)[m
+[36m@@ -47,6 +53,11 @@[m [mNotes:[m
+ [m
+ Android requires `android/app/google-services.json`. iOS requires `GoogleService-Info.plist` per standard Firebase RN setup.[m
+ [m
+[32m+[m[32mCurrent state (verified 2026-10-11): `android/app/google-services.json` for project[m
+[32m+[m[32m`finance-fd3f3` / package `com.financeai` is present and gitignored. The Google[m
+[32m+[m[32mServices Gradle plugin (`com.google.gms.google-services` 4.4.4) is applied when the[m
+[32m+[m[32mfile exists, and `gradlew :app:assembleDebug` succeeds with Firebase enabled.[m
+[32m+[m
+ - If the file is missing, the app cannot initialize Firebase and will show a notice that sign-in is not available (no developer fallback).[m
+ - The session subscribes to `onIdTokenChanged` (Firebase Auth) so refreshed tokens are adopted without a sign-out/in.[m
+ - Project consistency: `firebaseProjectId()` reads the configured project; if `config.project_id` differs, the UI warns.[m
+[36m@@ -65,3 +76,20 @@[m [mTo test real Firebase end-to-end (BLOCKED if credentials missing):[m
+ - A mismatch (different `project_id`) is detected and blocks successful operation as designed.[m
+ [m
+ Do not invent tokens or mark Firebase as verified without running these steps against real credentials.[m
+[32m+[m
+[32m+[m[32m## Remaining manual steps (environment variables to supply)[m
+[32m+[m
+[32m+[m[32mWeb (`finance-ai-frontend/.env.local`, not committed): the six `VITE_FIREBASE_*`[m
+[32m+[m[32mvalues from the console Web app config for project `finance-fd3f3`[m
+[32m+[m[32m(`VITE_FIREBASE_PROJECT_ID=finance-fd3f3`). Until this file exists the login screen[m
+[32m+[m[32mshows the setup notice (100-unit-test path still passes).[m
+[32m+[m
+[32m+[m[32mAPI (`finance-ai-api/.env`): download the service-account JSON from Console →[m
+[32m+[m[32mProject settings → Service accounts → Firebase Admin SDK → "Generate new private[m
+[32m+[m[32mkey", then set either `FIREBASE_CREDENTIALS_PATH` (recommended) or[m
+[32m+[m[32m`FIREBASE_CREDENTIALS_JSON`. Then set `ALLOW_DEV_AUTH=false` (and `APP_ENV=production`[m
+[32m+[m[32mwith a `SECRET_KEY` when deployed). The server then reports `provider=firebase` and[m
+[32m+[m[32mrejects any token issued by a different project.[m
+[32m+[m
+[32m+[m[32mAndroid: done for `finance-fd3f3`. To test on a device, set[m
+[32m+[m[32m`API_BASE_URL_OVERRIDE` in `src/config.ts` to the host machine's LAN address.[m
+[1mdiff --git a/docs/verification.md b/docs/verification.md[m
+[1mindex 4f3cc05..55efce4 100644[m
+[1m--- a/docs/verification.md[m
+[1m+++ b/docs/verification.md[m
+[36m@@ -12,7 +12,19 @@[m
+ - API: `/api/auth/config` returns `project_id`; dev-token endpoint remains but is reachable only when `ALLOW_DEV_AUTH=true` and Firebase is absent.[m
+ [m
+ ## Real Firebase E2E[m
+[31m-- BLOCKED: No Firebase credentials (`FIREBASE_*` not configured), no `android/app/google-services.json`, no `VITE_FIREBASE_*` in the frontend env. Documented in `docs/firebase-setup.md`; not faked.[m
+[32m+[m[32m- Android config: `android/app/google-services.json` for project `finance-fd3f3` /[m
+[32m+[m[32m  package `com.financeai` is in place (gitignored) and the debug APK builds with the[m
+[32m+[m[32m  Google Services plugin applied (`gradlew :app:assembleDebug` → BUILD SUCCESSFUL).[m
+[32m+[m[32m- API: `FIREBASE_PROJECT_ID=finance-fd3f3` set; token verification still requires a[m
+[32m+[m[32m  service account → real token verification is BLOCKED, not faked. Dev provider[m
+[32m+[m[32m  active only in this unconfigured state.[m
+[32m+[m[32m- Web: no `VITE_FIREBASE_*` env file present → real Web sign-in BLOCKED until[m
+[32m+[m[32m  supplied.[m
+[32m+[m[32m- Live MySQL `finance_ai` (9 users / 11 transactions / 3 budgets) read-only check[m
+[32m+[m[32m  PASS; `users.firebase_uid` and `users.email` both UNIQUE, matching provisioning.[m
+[32m+[m[32m- Re-verified this session: API pytest **269 passed**; ML pytest **81 passed**; Web[m
+[32m+[m[32m  vitest **100 passed** (+ typecheck, lint clean; one first-run timeout flake passed[m
+[32m+[m[32m  on rerun); Mobile jest **39 passed** (typecheck clean, lint 0 errors / 24 warnings).[m
+ [m
+ ## Shared Backend + Database (T6) - PASS[m
+ A dedicated MySQL database (`finance_ai_e2e`) was created and migrated with the real[m
+[1mdiff --git a/finance-ai-api/app/models/__init__.py b/finance-ai-api/app/models/__init__.py[m
+[1mindex 8e88815..5797470 100644[m
+[1m--- a/finance-ai-api/app/models/__init__.py[m
+[1m+++ b/finance-ai-api/app/models/__init__.py[m
+[36m@@ -27,6 +27,7 @@[m [mfrom app.models.loan import ([m
+ )[m
+ from app.models.notification import Notification, NotificationType[m
+ from app.models.report import Report, ReportFormat, ReportType[m
+[32m+[m[32mfrom app.models.sms_message import SmsIngestStatus, SmsMessage[m
+ from app.models.transaction import ([m
+     EmiType,[m
+     Transaction,[m
+[36m@@ -63,6 +64,8 @@[m [m__all__ = [[m
+     "ReportType",[m
+     "RiskLevel",[m
+     "SharedExpense",[m
+[32m+[m[32m    "SmsIngestStatus",[m
+[32m+[m[32m    "SmsMessage",[m
+     "StrEnum",[m
+     "TimestampMixin",[m
+     "Transaction",[m
+[1mdiff --git a/finance-ai-api/app/routes/transactions.py b/finance-ai-api/app/routes/transactions.py[m
+[1mindex ab2ca00..593fa4d 100644[m
+[1m--- a/finance-ai-api/app/routes/transactions.py[m
+[1m+++ b/finance-ai-api/app/routes/transactions.py[m
+[36m@@ -19,8 +19,6 @@[m [mfrom sqlalchemy.orm import Session[m
+ [m
+ from app.core.deps import get_current_user[m
+ from app.database.connection import get_db[m
+[31m-from app.ml import trainer[m
+[31m-from app.models.fraud_alert import DetectionLayer, FraudAlert, RiskLevel[m
+ from app.models.transaction import Transaction, TransactionSource, TransactionType[m
+ from app.models.user import User[m
+ from app.schemas.transaction import ([m
+[36m@@ -31,7 +29,7 @@[m [mfrom app.schemas.transaction import ([m
+     TransactionResponse,[m
+     TransactionUpdate,[m
+ )[m
+[31m-from app.services.fraud_detection import analyze_with_baseline[m
+[32m+[m[32mfrom app.services.transaction_analysis import apply_analysis, user_history[m
+ [m
+ logger = logging.getLogger(__name__)[m
+ [m
+[36m@@ -50,76 +48,6 @@[m [mdef _not_found() -> HTTPException:[m
+     return HTTPException(status_code=404, detail="Transaction not found")[m
+ [m
+ [m
+[31m-def _user_history(db: Session, user_id: int, exclude_id: Optional[int] = None):[m
+[31m-    """Prior transactions used as the behavioural baseline for scoring."""[m
+[31m-    stmt = select(Transaction).where(Transaction.user_id == user_id)[m
+[31m-    if exclude_id is not None:[m
+[31m-        stmt = stmt.where(Transaction.id != exclude_id)[m
+[31m-    return list(db.execute(stmt.order_by(Transaction.transaction_date.desc()).limit(500)).scalars())[m
+[31m-[m
+[31m-[m
+[31m-def _score(transaction: Transaction, history, db: Session) -> dict:[m
+[31m-    """Blend the rule engine with the ML model for one transaction."""[m
+[31m-    amounts = [float(t.amount) for t in history][m
+[31m-    merchants = [t.merchant for t in history if t.merchant][m
+[31m-    categories = [t.category for t in history if t.category][m
+[31m-    recent_24h = sum([m
+[31m-        1[m
+[31m-        for t in history[m
+[31m-        if (transaction.transaction_date - t.transaction_date).total_seconds() <= 86400[m
+[31m-        and t.transaction_date <= transaction.transaction_date[m
+[31m-    )[m
+[31m-[m
+[31m-    rule = analyze_with_baseline([m
+[31m-        float(transaction.amount),[m
+[31m-        transaction.merchant,[m
+[31m-        transaction.transaction_date,[m
+[31m-        category=transaction.category,[m
+[31m-        history_amounts=amounts,[m
+[31m-        history_merchants=merchants,[m
+[31m-        history_categories=categories,[m
+[31m-        transactions_last_24h=recent_24h,[m
+[31m-    )[m
+[31m-    ml_result = trainer.score_transaction([m
+[31m-        transaction,[m
+[31m-        user_mean_amount=(sum(amounts) / len(amounts)) if amounts else None,[m
+[31m-        merchant_seen_count=sum(1 for m in merchants if m and m == transaction.merchant),[m
+[31m-        user_tx_count=len(history),[m
+[31m-        rule_score=rule["risk_score"],[m
+[31m-    )[m
+[31m-    return {"rule": rule, "ml": ml_result}[m
+[31m-[m
+[31m-[m
+[31m-def _apply_analysis(transaction: Transaction, history, db: Session) -> dict:[m
+[31m-    """Score a transaction and persist the alert when warranted."""[m
+[31m-    result = _score(transaction, history, db)[m
+[31m-    rule = result["rule"][m
+[31m-    ml = result["ml"][m
+[31m-    combined = ml.get("combined_score", rule["risk_score"])[m
+[31m-[m
+[31m-    transaction.fraud_score = combined[m
+[31m-    transaction.is_flagged = combined >= 30[m
+[31m-[m
+[31m-    alert_payload = None[m
+[31m-    if transaction.is_flagged:[m
+[31m-        level = ml.get("risk_level", rule["risk_level"])[m
+[31m-        alert_payload = FraudAlert([m
+[31m-            user_id=transaction.user_id,[m
+[31m-            transaction_id=None,[m
+[31m-            risk_score=combined,[m
+[31m-            risk_level=RiskLevel(level),[m
+[31m-            is_fraud=level == "HIGH",[m
+[31m-            detection_layer=([m
+[31m-                DetectionLayer.COMBINED if ml.get("status") == "combined" else DetectionLayer.RULES[m
+[31m-            ),[m
+[31m-            reasons=rule["reasons"],[m
+[31m-            amount_snapshot=Decimal(str(transaction.amount)),[m
+[31m-            merchant_snapshot=transaction.merchant,[m
+[31m-            category_snapshot=transaction.category,[m
+[31m-        )[m
+[31m-    return {"combined_score": combined, "alert": alert_payload, "ml": ml}[m
+[31m-[m
+[31m-[m
+ @router.post([m
+     "",[m
+     response_model=TransactionResponse,[m
+[36m@@ -131,7 +59,7 @@[m [mdef create_transaction([m
+     current_user: User = Depends(get_current_user),[m
+     db: Session = Depends(get_db),[m
+ ) -> Transaction:[m
+[31m-    history = _user_history(db, current_user.id)[m
+[32m+[m[32m    history = user_history(db, current_user.id)[m
+ [m
+     transaction = Transaction([m
+         user_id=current_user.id,[m
+[36m@@ -150,7 +78,7 @@[m [mdef create_transaction([m
+     db.add(transaction)[m
+     db.flush()  # assign the id without committing yet[m
+ [m
+[31m-    analysis = _apply_analysis(transaction, history, db)[m
+[32m+[m[32m    analysis = apply_analysis(transaction, history, db)[m
+     if analy
