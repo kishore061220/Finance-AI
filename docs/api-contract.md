@@ -97,6 +97,7 @@ DELETE /api/notifications/{notification_id}
 GET    /api/notifications/unread-count
 GET    /api/notifications/devices
 POST   /api/notifications/devices
+DELETE /api/notifications/devices
 DELETE /api/notifications/devices/{device_id}
 POST   /api/notifications/devices/test
 
@@ -111,6 +112,11 @@ POST   /api/backups/{backup_id}/restore
 GET    /api/reports
 GET    /api/reports/types
 POST   /api/reports/generate
+
+GET    /api/sms/messages
+POST   /api/sms/messages
+POST   /api/sms/messages/{message_id}/confirm
+POST   /api/sms/messages/{message_id}/reject
 
 GET    /api/ml/status
 GET    /api/ml/train/report
