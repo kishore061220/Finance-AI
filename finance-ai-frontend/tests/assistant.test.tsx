@@ -60,6 +60,8 @@ type AssistantReply = {
   suggestions: string[]
   fallback: boolean
   retryable?: boolean
+  error?: string | null
+  retry_after_seconds?: number | null
 }
 
 type Handler = unknown | ((config: { data?: string }) => unknown | Promise<unknown>)
@@ -225,6 +227,78 @@ describe('AssistantPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(await screen.findByText('Real remote answer')).toBeInTheDocument()
     expect(asks).toBe(2)
+  })
+
+  const RETRY_CASES: Array<{ code: string; retryable: boolean }> = [
+    { code: 'provider_unavailable', retryable: true },
+    { code: 'timeout', retryable: true },
+    { code: 'rate_limited', retryable: true },
+    { code: 'quota_exhausted', retryable: false },
+    { code: 'auth_error', retryable: false },
+    { code: 'model_not_found', retryable: false },
+    { code: 'bad_response', retryable: false },
+  ]
+
+  it.each(RETRY_CASES)(
+    'shows the Retry button only for the retryable code $code',
+    async ({ code, retryable }) => {
+      installApi({
+        '/api/assistant/config': ASSISTANT_CONFIG,
+        '/api/assistant': {
+          reply: `fallback reply for ${code}`,
+          provider: 'builtin',
+          model: null,
+          context_used: [],
+          suggestions: [],
+          fallback: true,
+          retryable,
+          error: code,
+          retry_after_seconds: null,
+        } satisfies AssistantReply,
+      })
+      renderAssistant()
+      await openAssistant()
+
+      await userEvent.type(screen.getByLabelText(/your question/i), 'hi')
+      await userEvent.click(screen.getByRole('button', { name: /send/i }))
+
+      expect(await screen.findByText(`fallback reply for ${code}`)).toBeInTheDocument()
+      const retry = screen.queryByRole('button', { name: /^retry$/i })
+      if (retryable) {
+        expect(retry).toBeInTheDocument()
+      } else {
+        expect(retry).not.toBeInTheDocument()
+      }
+    },
+  )
+
+  it('shows the quota reset time without inviting an immediate retry', async () => {
+    installApi({
+      '/api/assistant/config': ASSISTANT_CONFIG,
+      '/api/assistant': {
+        reply:
+          'The Gemini daily quota is used up, so remote answers are paused for now. ' +
+          'They should be available again around 15 Oct 2026, 09:00 UTC.',
+        provider: 'builtin',
+        model: null,
+        context_used: [],
+        suggestions: [],
+        fallback: true,
+        retryable: false,
+        error: 'quota_exhausted',
+        retry_after_seconds: 50400,
+      } satisfies AssistantReply,
+    })
+    renderAssistant()
+    await openAssistant()
+
+    await userEvent.type(screen.getByLabelText(/your question/i), 'hi')
+    await userEvent.click(screen.getByRole('button', { name: /send/i }))
+
+    expect(await screen.findByText(/quota is used up/i)).toBeInTheDocument()
+    expect(screen.getByText(/available again around/i)).toBeInTheDocument()
+    expect(screen.queryByText(/try again in a moment/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^retry$/i })).not.toBeInTheDocument()
   })
 
   it('surfaces a hard request error', async () => {

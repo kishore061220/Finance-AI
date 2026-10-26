@@ -8,15 +8,15 @@ T8 ML training/eval + real inference, T9 full verification, T10 PASS/FAIL/PARTIA
 BLOCKED report. Do not repeat T1-T5 and do not fabricate Firebase/ML results.
 
 ## T1-T5 - PASS (prior work, re-verified)
-- Web: Firebase-only session via `onIdTokenChanged`, dev-token path removed, `project_id` consistency check; tests updated with `firebaseMock`; 104 passed; typecheck + lint + build clean.
+- Web: Firebase-only session via `onIdTokenChanged`, dev-token path removed, `project_id` consistency check; tests updated with `firebaseMock`; 146 passed; typecheck + lint + build clean.
 - Mobile: Firebase-only via `onIdTokenChanged`, dev-token path and `DEV_TOKEN_KEY` removed, project consistency; mocks/tests updated; 60 passed; typecheck clean, lint 24 warnings / 0 errors.
-- API: `/api/auth/config` returns `project_id`; backend auth unchanged; 306 tests pass (includes the audit fixes in [completion-audit.md](completion-audit.md)).
+- API: `/api/auth/config` returns `project_id`; backend auth unchanged; 394 tests pass (includes the audit fixes in [completion-audit.md](completion-audit.md)).
 - Docs: `docs/firebase-setup.md`, `docs/verification.md`, `docs/completion-audit.md`, README/.env.example updated.
 
 ## Test Baselines (verified this session)
-- API: 306 passed
+- API: 394 passed
 - ML: 81 passed (parity subset 10 passed)
-- Web: 104 passed (5 files)
+- Web: 146 passed (10 files)
 - Mobile: 60 passed (5 suites)
 - Android: `:app:assembleDebug` BUILD SUCCESSFUL (~19.8 MB APK); `bundle:android` exit 0
 
@@ -27,12 +27,23 @@ BLOCKED report. Do not repeat T1-T5 and do not fabricate Firebase/ML results.
 - Script: `finance-ai-api/scripts/e2e_shared_backend.py` (hard guard: refuses any target that is not the dedicated `*_e2e` database).
 
 ## T7 (feature UI) - PASS
-- Web: `ReportsPage`, `FamilyPage`, `AssistantPage` implemented and wired into routes/nav; endpoint/type fixes for reports + assistant + family; typecheck + lint clean; 104 tests pass.
+- Web: `ReportsPage`, `FamilyPage`, `AssistantPage` implemented and wired into routes/nav; endpoint/type fixes for reports + assistant + family; typecheck + lint clean; 146 tests pass.
 - Mobile: `ReportsScreen`, `FamilyScreen`, `AssistantScreen` implemented, wired into `MoreStackNavigator` and the `More` hub; typed APIs/wire types added; typecheck clean; lint 0 errors; 60 tests pass.
 
 ## T8 (ML) - PASS
 - Artifacts present (`fraud_model.json` + `.pkl`): random_forest `roc_auc 0.7577`, `avg_precision 0.0866`, `precision 0.0213`, `recall 0.3333`, `f1 0.0401`, `thr 0.5`, `rows_used 282982`.
 - API loads the model (`model_loaded`, `scoring_mode=combined`) and combines it with the rule engine. ML suite (training, comparison, dataset, parity) 81 passed.
+
+## AI/ML honesty
+- **Fraud detection** is a hybrid: the rule engine is primary and a Random
+  Forest trained on the public ULB credit-card dataset (OpenML id 1597) is a
+  secondary, baseline-quality signal. On the chronological hold-out its recall
+  is **0.0** (ROC-AUC 0.6626, PR-AUC 0.0021); the stratified 20% hold-out gives
+  ROC-AUC 0.7577, PR-AUC 0.0866 and recall 0.3333. Rules keep 70% weight and
+  the model 30%.
+- **Spending prediction** is a linear-trend heuristic.
+- **Categorisation, SMS and OCR parsing** are rule/regex based.
+- **The assistant** is a built-in engine plus an optional Gemini provider.
 
 ## T9 (end-to-end verification) - PASS
 - All unit suites green; Web typecheck+lint+build clean; Mobile typecheck clean and lint 0 errors; Android `assembleDebug` and `bundle:android` succeeded.

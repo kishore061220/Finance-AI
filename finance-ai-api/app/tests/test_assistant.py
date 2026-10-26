@@ -369,6 +369,152 @@ _CUSTOM_BUDGET_QUESTION = (
     "the total is exactly \u20b915,000."
 )
 
+# A purely general finance-education question: it must be answered by the remote
+# model even for a brand-new account with no transactions, and must never be
+# faked from a canned built-in reply when the provider is down.
+_REDUCE_SPENDING_QUESTION = (
+    "Explain three practical ways to reduce unnecessary spending."
+)
+
+
+class TestReduceSpendingQuestion:
+    def test_remote_success_is_shown_as_the_remote_answer(self, monkeypatch):
+        _patch_settings(monkeypatch, _remote_settings())
+        monkeypatch.setattr(
+            httpx, "post", lambda *a, **k: _FakeResponse(
+                {"choices": [{"message": {"content":
+                    "1. Track every expense. 2. Set a weekly cap. 3. Wait 24 "
+                    "hours before a non-essential purchase."}}]}
+            )
+        )
+
+        out = assistant.respond(_REDUCE_SPENDING_QUESTION, [], [], [])
+        assert out["provider"] == "openai"
+        assert out["fallback"] is False
+        assert out["error"] is None
+        assert "Track every expense" in out["reply"]
+
+    def test_remote_failure_is_honest_and_never_faked(self, monkeypatch):
+        _patch_settings(monkeypatch, _remote_settings())
+        calls = _counted_post(monkeypatch, lambda i: _FakeResponse({}, status_code=503))
+
+        out = assistant.respond(_REDUCE_SPENDING_QUESTION, [], [], [])
+        assert out["provider"] == "builtin"
+        assert out["fallback"] is True
+        assert out["error"] == assistant.ERROR_PROVIDER_UNAVAILABLE
+        assert out["retryable"] is True
+        # The built-in intent engine has no data to ground this question in, so
+        # it must not invent an answer.
+        assert out["reply"] == assistant.REMOTE_UNAVAILABLE_REPLY
+        assert calls["n"] == assistant.MAX_REMOTE_ATTEMPTS
+
+
+class TestHiQuestion:
+    def test_hi_succeeds_remotely_when_the_provider_is_healthy(self, monkeypatch):
+        _patch_settings(monkeypatch, _remote_settings())
+        calls = _counted_post(
+            monkeypatch,
+            lambda i: _FakeResponse({"choices": [{"message": {"content": "Hello!"}}]}),
+        )
+
+        out = assistant.respond("hi", [], [], [])
+        assert out["provider"] == "openai"
+        assert out["fallback"] is False
+        assert out["reply"] == "Hello!"
+        assert calls["n"] == 1
+
+    def test_hi_when_the_provider_is_down_uses_the_honest_message(self, monkeypatch):
+        _patch_settings(monkeypatch, _remote_settings())
+        _counted_post(monkeypatch, lambda i: _FakeResponse({}, status_code=503))
+
+        out = assistant.respond("hi", [], [], [])
+        assert out["provider"] == "builtin"
+        assert out["fallback"] is True
+        assert out["error"] == assistant.ERROR_PROVIDER_UNAVAILABLE
+        assert out["reply"] == assistant.REMOTE_UNAVAILABLE_REPLY
+
+
+class TestErrorMessagesPerCode:
+    """Each failure code maps to an honest, code-specific message.
+
+    In particular a quota/auth/model failure must never invite an immediate
+    retry ("try again in a moment"), because retrying cannot help.
+    """
+
+    def _respond(self, monkeypatch, response):
+        _patch_settings(monkeypatch, _remote_settings())
+        _counted_post(monkeypatch, lambda i: response)
+        return assistant.respond("hi", [], [], [])
+
+    def test_quota_message_states_the_quota_and_no_immediate_retry(self, monkeypatch):
+        out = self._respond(monkeypatch, _quota_response(3600))
+        assert out["error"] == assistant.ERROR_QUOTA_EXHAUSTED
+        assert "quota" in out["reply"].lower()
+        assert "try again in a moment" not in out["reply"].lower()
+        assert out["retryable"] is False
+
+    def test_quota_without_a_reset_time_still_never_says_try_again_in_a_moment(
+        self, monkeypatch
+    ):
+        # A quota 429 whose body carries no reset time at all.
+        body = [{"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                           "message": "Quota exceeded."}}]
+        out = self._respond(monkeypatch, _FakeResponse(body, status_code=429))
+        assert out["error"] == assistant.ERROR_QUOTA_EXHAUSTED
+        assert "quota" in out["reply"].lower()
+        assert "try again in a moment" not in out["reply"].lower()
+
+    def test_auth_message_is_specific_and_not_retryable(self, monkeypatch):
+        out = self._respond(monkeypatch, _FakeResponse({}, status_code=401))
+        assert out["error"] == assistant.ERROR_AUTH
+        assert "credentials" in out["reply"].lower()
+        assert "try again in a moment" not in out["reply"].lower()
+        assert out["retryable"] is False
+
+    def test_forbidden_message_is_specific_and_not_retryable(self, monkeypatch):
+        out = self._respond(monkeypatch, _FakeResponse({}, status_code=403))
+        assert out["error"] == assistant.ERROR_AUTH
+        assert "try again in a moment" not in out["reply"].lower()
+        assert out["retryable"] is False
+
+    def test_model_not_found_message_is_specific_and_not_retryable(self, monkeypatch):
+        out = self._respond(monkeypatch, _FakeResponse({}, status_code=404))
+        assert out["error"] == assistant.ERROR_MODEL_NOT_FOUND
+        assert "model" in out["reply"].lower()
+        assert "try again in a moment" not in out["reply"].lower()
+        assert out["retryable"] is False
+
+    def test_bad_response_message_is_specific_and_not_retryable(self, monkeypatch):
+        out = self._respond(
+            monkeypatch, _FakeResponse({"choices": [{"message": {"content": "  "}}]})
+        )
+        assert out["error"] == assistant.ERROR_BAD_RESPONSE
+        assert "try again in a moment" not in out["reply"].lower()
+        assert out["retryable"] is False
+
+    def test_bad_response_400_message_is_specific_and_not_retryable(self, monkeypatch):
+        out = self._respond(monkeypatch, _FakeResponse({}, status_code=400))
+        assert out["error"] == assistant.ERROR_BAD_RESPONSE
+        assert out["retryable"] is False
+
+    def test_transient_failures_keep_the_retry_hint(self, monkeypatch):
+        out = self._respond(monkeypatch, _FakeResponse({}, status_code=503))
+        assert out["error"] == assistant.ERROR_PROVIDER_UNAVAILABLE
+        assert "try again in a moment" in out["reply"].lower()
+        assert out["retryable"] is True
+
+    def test_timeout_message_keeps_the_retry_hint(self, monkeypatch):
+        _patch_settings(monkeypatch, _remote_settings())
+
+        def boom(*a, **k):
+            raise httpx.ReadTimeout("slow")
+
+        monkeypatch.setattr(httpx, "post", boom)
+        out = assistant.respond("hi", [], [], [])
+        assert out["error"] == assistant.ERROR_TIMEOUT
+        assert "try again" in out["reply"].lower()
+        assert out["retryable"] is True
+
 
 class TestProviderErrorCodes:
     """Each real failure is mapped to a safe code and the right retry policy."""
@@ -474,6 +620,23 @@ class TestQuotaCircuitBreaker:
         assert out["error"] == assistant.ERROR_QUOTA_EXHAUSTED
         assert out["retryable"] is False
         assert "quota" in out["reply"].lower()
+
+    def test_the_provider_is_contacted_again_once_the_breaker_expires(self, monkeypatch):
+        _patch_settings(monkeypatch, _remote_settings())
+        calls = _counted_post(monkeypatch, lambda i: _quota_response(3600))
+
+        assistant.respond("hi", [], [], [])
+        made = calls["n"]
+
+        # Still inside the cooldown: the provider is skipped entirely.
+        assistant.respond("hi", [], [], [])
+        assert calls["n"] == made
+
+        # Jump past the reset: the breaker clears and the provider is retried.
+        real = assistant.time.monotonic
+        monkeypatch.setattr(assistant.time, "monotonic", lambda: real() + 10 ** 9)
+        assistant.respond("hi", [], [], [])
+        assert calls["n"] > made
 
 
 class TestAttemptCountsAndGeneralQuestions:
@@ -686,6 +849,27 @@ class TestAssistantRoute:
         assert body["retryable"] is True
         assert body["reply"] == assistant.REMOTE_UNAVAILABLE_REPLY
 
+    def test_an_open_cooldown_does_not_cache_a_financial_answer(
+        self, client, auth, db, monkeypatch
+    ):
+        alice = client.get("/api/auth/me", headers=auth).json()["id"]
+        _seed_transaction(db, alice, "123456.78")
+        _patch_settings(monkeypatch, _remote_settings())
+        monkeypatch.setattr(httpx, "post", lambda *a, **k: _quota_response(3600))
+
+        # A general question with no data backing opens the breaker.
+        first = client.post("/api/assistant", headers=auth, json={"message": "hi"}).json()
+        assert first["error"] == assistant.ERROR_QUOTA_EXHAUSTED
+
+        # A data-backed question while the breaker is open is still answered
+        # from the caller's own rows; the breaker pauses the provider only.
+        second = client.post(
+            "/api/assistant", headers=auth, json={"message": "total spending"}
+        ).json()
+        assert second["provider"] == "builtin"
+        assert second["fallback"] is True
+        assert "\u20b91,23,456.78" in second["reply"]
+
     def test_rejects_an_overlong_history(self, client, auth):
         history = [{"role": "user", "content": "x" * 10} for _ in range(50)]
         response = client.post(
@@ -751,7 +935,34 @@ class TestAssistantConfigRoute:
         body = client.get("/api/assistant/config", headers=auth).json()
         assert body["status"] == "quota_exhausted"
         assert body["retry_after_seconds"] and body["retry_after_seconds"] > 0
+        assert body["retry_at"]
         assert "quota" in body["message"].lower()
+
+    def test_unavailable_status_is_surfaced_truthfully(self, client, auth, monkeypatch):
+        _patch_settings(monkeypatch, _remote_settings())
+        monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResponse({}, status_code=503))
+
+        # A transient provider failure is recorded as unavailable...
+        client.post("/api/assistant", headers=auth, json={"message": "hi"})
+
+        body = client.get("/api/assistant/config", headers=auth).json()
+        assert body["status"] == "unavailable"
+        assert body["remote_configured"] is True
+        assert "unavailable" in body["message"].lower() or "failed" in body["message"].lower()
+
+    def test_a_page_load_never_contacts_the_provider(self, client, auth, monkeypatch):
+        _patch_settings(monkeypatch, _remote_settings())
+        calls = {"n": 0}
+
+        def boom(*a, **k):
+            calls["n"] += 1
+            raise AssertionError("config/page load must not call the provider")
+
+        monkeypatch.setattr(httpx, "post", boom)
+
+        body = client.get("/api/assistant/config", headers=auth).json()
+        assert body["suggestions"]
+        assert calls["n"] == 0
 
 
 class TestOptionalFallbackProvider:

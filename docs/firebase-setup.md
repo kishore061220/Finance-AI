@@ -65,9 +65,9 @@ file exists, and `gradlew :app:assembleDebug` succeeds with Firebase enabled.
 
 ## Verification (no fabrication)
 
-1. API: `cd finance-ai-api && .venv\Scripts\python.exe -m pytest -q` → 306 passed.
+1. API: `cd finance-ai-api && .venv\Scripts\python.exe -m pytest -q` → 394 passed.
 2. ML: `cd finance-ai-ml && ..\finance-ai-api\.venv\Scripts\python.exe -m pytest -q` → 81 passed.
-3. Web: `cd finance-ai-frontend && npx vitest run` → 104 passed; `npm run typecheck`, `npm run lint` clean.
+3. Web: `cd finance-ai-frontend && npx vitest run` → 146 passed; `npm run typecheck`, `npm run lint` clean.
 4. Mobile: `cd C:\Projects\Finance-AI && npx jest --no-coverage` → 60 passed; `npm run typecheck` clean, `npm run lint` produces only style warnings.
 
 To test real Firebase end-to-end (BLOCKED if credentials missing):
@@ -83,7 +83,7 @@ Do not invent tokens or mark Firebase as verified without running these steps ag
 Web (`finance-ai-frontend/.env.local`, not committed): the six `VITE_FIREBASE_*`
 values from the console Web app config for project `finance-fd3f3`
 (`VITE_FIREBASE_PROJECT_ID=finance-fd3f3`). Until this file exists the login screen
-shows the setup notice (104-unit-test path still passes).
+shows the setup notice (146-unit-test path still passes).
 
 API (`finance-ai-api/.env`): download the service-account JSON from Console →
 Project settings → Service accounts → Firebase Admin SDK → "Generate new private

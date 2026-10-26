@@ -1,17 +1,17 @@
 # Verification Summary
 
 ## Baseline Test Results (actual, re-run this session)
-- API (finance-ai-api): **306 passed** (pytest -q) - verified
+- API (finance-ai-api): **394 passed** (pytest -q) - verified
 - ML (finance-ai-ml): **81 passed** (pytest -q); API/backend feature-parity subset **10 passed** - verified
-- Web (finance-ai-frontend): **104 passed / 5 files** (vitest run); typecheck + lint + build clean - verified
+- Web (finance-ai-frontend): **146 passed / 10 files** (vitest run); typecheck + lint + build clean - verified
 - Mobile (FinanceAI, repo root): **60 passed / 5 suites** (jest --no-coverage); `tsc --noEmit` clean; lint 24 warnings / 0 errors - verified
 - Android (android/): `:app:assembleDebug` **BUILD SUCCESSFUL** (~19.8 MB APK) - verified
 - Mobile Android JS bundle: `npm run bundle:android` **exit 0** (Metro wrote the bundle + 19 assets) - verified
 - See [completion-audit.md](completion-audit.md) for the audit findings and fixes behind the API count.
 
 ## Firebase/Auth Changes
-- Web: Removed dev-token path; Firebase-only session via `onIdTokenChanged`; project_id consistency check; updated tests with `firebaseMock`; 103 passed.
-- Mobile: Removed dev-token path and `DEV_TOKEN_KEY`; Firebase-only; `onIdTokenChanged`; project consistency; updated mocks/tests; 58 passed.
+- Web: Removed dev-token path; Firebase-only session via `onIdTokenChanged`; project_id consistency check; updated tests with `firebaseMock`; 146 passed.
+- Mobile: Removed dev-token path and `DEV_TOKEN_KEY`; Firebase-only; `onIdTokenChanged`; project consistency; updated mocks/tests; 60 passed.
 - API: `/api/auth/config` returns `project_id`; dev-token endpoint remains but is reachable only when `ALLOW_DEV_AUTH=true` and Firebase is absent.
 
 ## Real Firebase E2E
@@ -25,8 +25,8 @@
   supplied.
 - Live MySQL `finance_ai` (9 users / 11 transactions / 3 budgets) read-only check
   PASS; `users.firebase_uid` and `users.email` both UNIQUE, matching provisioning.
-- Re-verified this session: API pytest **306 passed**; ML pytest **81 passed**
-  (parity subset 10 passed); Web vitest **104 passed** (+ typecheck, lint, build
+- Re-verified this session: API pytest **394 passed**; ML pytest **81 passed**
+  (parity subset 10 passed); Web vitest **146 passed** (+ typecheck, lint, build
   clean); Mobile jest **60 passed** (typecheck clean, lint 0 errors / 24 warnings);
   Android `assembleDebug` BUILD SUCCESSFUL; mobile `bundle:android` exit 0.
 
@@ -59,7 +59,7 @@ Result: **20/20 checks passed**, including:
 - the T7 feature endpoints (reports types/generate/history, assistant config/ask, family create/invite/members) all work against that same backend.
 
 ## Feature Coverage (T7) - PASS
-- Web: `ReportsPage`, `FamilyPage`, `AssistantPage` implemented and wired into routes/nav; `endpoints.ts` `reportApi`/`assistantApi`/`familyApi` and `ReportRecord`/assistant response shapes corrected; typecheck + lint clean; 104 tests pass.
+- Web: `ReportsPage`, `FamilyPage`, `AssistantPage` implemented and wired into routes/nav; `endpoints.ts` `reportApi`/`assistantApi`/`familyApi` and `ReportRecord`/assistant response shapes corrected; typecheck + lint clean; 146 tests pass.
 - Mobile: `ReportsScreen`, `FamilyScreen`, `AssistantScreen` implemented, wired into the `MoreStackNavigator` and the `More` hub rows; typed `reportApi`/`assistantApi`/`familyApi` and wire types added; `tsc --noEmit` clean; lint 24/0; 60 tests pass.
 
 ## ML (T8) - PASS
@@ -68,7 +68,7 @@ Result: **20/20 checks passed**, including:
 - ML suite covers training, comparison, dataset handling, and API/backend feature parity: 81 passed.
 
 ## Full Verification (T9)
-- All unit suites green (API 306, ML 81, Web 104, Mobile 60); Web typecheck+lint+build clean; Mobile typecheck clean and lint 0 errors; Android `assembleDebug` BUILD SUCCESSFUL and `bundle:android` exit 0.
+- All unit suites green (API 394, ML 81, Web 146, Mobile 60); Web typecheck+lint+build clean; Mobile typecheck clean and lint 0 errors; Android `assembleDebug` BUILD SUCCESSFUL and `bundle:android` exit 0.
 - Cross-client shared backend + MySQL proven by the 20/20 E2E above.
 - Alembic chain proven reversible on a disposable DB (`upgrade head` -> `downgrade base` -> `upgrade head`).
 - Real Firebase E2E remains BLOCKED (credentials absent) and is not simulated.

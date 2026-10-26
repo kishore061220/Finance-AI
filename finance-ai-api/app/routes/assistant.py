@@ -35,7 +35,10 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 #   quota_exhausted  - the provider's quota is spent (breaker open until reset)
 #   unavailable      - the last remote call failed; answers fell back to builtin
 _STATUS_MESSAGES = {
-    "builtin": "The assistant is using the built-in engine.",
+    "builtin": (
+        "The assistant is using the built-in engine. Set ASSISTANT_API_KEY to "
+        "enable the remote model."
+    ),
     "configured": "The remote model is configured and ready.",
     "working": "The remote model answered the last request successfully.",
     "quota_exhausted": "The Gemini daily quota is used up.",

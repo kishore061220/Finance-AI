@@ -287,7 +287,9 @@ DEFAULT_QUOTA_COOLDOWN_SECONDS = 900.0
 
 # Shown when the remote provider is configured but failed and the built-in
 # engine has no data-backed answer for the question. It is deliberately honest
-# rather than a plausible-looking canned reply.
+# rather than a plausible-looking canned reply. "Try again in a moment" belongs
+# only to genuinely transient failures - quota and auth failures must not imply
+# that retrying immediately will help.
 REMOTE_UNAVAILABLE_REPLY = (
     "The remote financial assistant is temporarily unavailable, so I can't "
     "answer that question right now. Please try again in a moment."
@@ -297,6 +299,38 @@ QUOTA_REPLY_TEMPLATE = (
     "The Gemini daily quota is used up, so remote answers are paused for now. "
     "They should be available again around {when}."
 )
+
+QUOTA_REPLY_NO_RESET = (
+    "The Gemini daily quota is used up, so remote answers are paused for now. "
+    "It should reset later today."
+)
+
+# A truthful, code-specific answer for when the remote provider failed and the
+# built-in engine cannot ground a reply in the user's own data. Kept separate
+# from REMOTE_UNAVAILABLE_REPLY so that a quota/auth/model failure never tells
+# the user to "try again in a moment" when retrying cannot help.
+ERROR_REPLY_TEMPLATES = {
+    ERROR_RATE_LIMITED: (
+        "The remote model is receiving too many requests right now. Please try "
+        "again in a moment."
+    ),
+    ERROR_PROVIDER_UNAVAILABLE: REMOTE_UNAVAILABLE_REPLY,
+    ERROR_TIMEOUT: (
+        "The remote model took too long to respond. Please try again."
+    ),
+    ERROR_AUTH: (
+        "The remote assistant rejected our API credentials, so remote answers "
+        "are paused until an administrator fixes the key."
+    ),
+    ERROR_MODEL_NOT_FOUND: (
+        "The configured remote model is not available, so remote answers are "
+        "paused until an administrator corrects the configuration."
+    ),
+    ERROR_BAD_RESPONSE: (
+        "The remote model returned a response I could not use, so I can't "
+        "answer that right now."
+    ),
+}
 
 
 # The last observed outcome of a remote attempt, so ``/config`` can report
@@ -673,7 +707,7 @@ def _builtin_is_meaningful(message: str, ctx: Dict) -> bool:
 def _quota_reply(when: Optional[str]) -> str:
     if when:
         return QUOTA_REPLY_TEMPLATE.format(when=when)
-    return REMOTE_UNAVAILABLE_REPLY
+    return QUOTA_REPLY_NO_RESET
 
 
 def _fallback_response(
@@ -696,7 +730,7 @@ def _fallback_response(
     elif error_code == ERROR_QUOTA_EXHAUSTED:
         reply = _quota_reply(cooldown_reset_label())
     else:
-        reply = REMOTE_UNAVAILABLE_REPLY
+        reply = ERROR_REPLY_TEMPLATES.get(error_code, REMOTE_UNAVAILABLE_REPLY)
     return {
         "reply": reply,
         "provider": "builtin",

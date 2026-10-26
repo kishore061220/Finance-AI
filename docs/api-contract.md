@@ -8,7 +8,7 @@ Base URL in development: `http://127.0.0.1:8000`. Every endpoint below except
 `/`, `/health`, `/api/info`, and `GET /api/auth/config` requires
 `Authorization: Bearer <token>`.
 
-## Endpoint inventory (95 operations)
+## Endpoint inventory (100 operations)
 
 ```
 GET    /

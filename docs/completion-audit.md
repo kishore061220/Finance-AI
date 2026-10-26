@@ -249,6 +249,18 @@ The full chain was exercised against a throwaway MySQL schema
 inspects the live foreign-key name via `sa.inspect`, which has no offline
 equivalent. This is by design, not a defect.
 
+## AI/ML honesty
+
+- **Fraud detection** is a hybrid: the rule engine is primary and a Random
+  Forest trained on the public ULB credit-card dataset (OpenML id 1597) is a
+  secondary, baseline-quality signal. On the chronological hold-out its recall
+  is **0.0** (ROC-AUC 0.6626, PR-AUC 0.0021); the stratified 20% hold-out gives
+  ROC-AUC 0.7577, PR-AUC 0.0866 and recall 0.3333. Rules keep 70% weight and
+  the model 30%.
+- **Spending prediction** is a linear-trend heuristic.
+- **Categorisation, SMS and OCR parsing** are rule/regex based.
+- **The assistant** is a built-in engine plus an optional Gemini provider.
+
 ## Documented, not fixed (low severity / operator-controlled)
 
 These were found and judged out of scope for a safe code change; they are
@@ -284,8 +296,8 @@ recorded here rather than silently changed.
 
 ## Verification
 
-- API: `306 passed` (includes every regression test above).
-- ML: `81 passed`. Web: `104 passed`, typecheck + lint + build clean. Mobile:
+- API: `394 passed` (includes every regression test above).
+- ML: `81 passed`. Web: `146 passed`, typecheck + lint + build clean. Mobile:
   `60 passed`, typecheck clean, lint 0 errors / 24 warnings.
 - Android: `:app:assembleDebug` BUILD SUCCESSFUL; merged manifest carries
   `RECEIVE_SMS` and `com.financeai.sms.SmsReceiver`.
