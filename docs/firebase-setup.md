@@ -68,7 +68,8 @@ file exists, and `gradlew :app:assembleDebug` succeeds with Firebase enabled.
 1. API: `cd finance-ai-api && .venv\Scripts\python.exe -m pytest -q` → 394 passed.
 2. ML: `cd finance-ai-ml && ..\finance-ai-api\.venv\Scripts\python.exe -m pytest -q` → 81 passed.
 3. Web: `cd finance-ai-frontend && npx vitest run` → 146 passed; `npm run typecheck`, `npm run lint` clean.
-4. Mobile: `cd C:\Projects\Finance-AI && npx jest --no-coverage` → 60 passed; `npm run typecheck` clean, `npm run lint` produces only style warnings.
+4. Mobile: `cd C:\Projects\Finance-AI && npx jest --no-coverage` → 85 passed; `npm run typecheck` clean, `npm run lint` produces only style warnings.
+   Mobile sign-in now supports Google (device verification pending).
 
 To test real Firebase end-to-end (BLOCKED if credentials missing):
 - Ensure the API runs with Firebase configured and `ALLOW_DEV_AUTH=false`. Do not point at the live `finance_ai` database for ad-hoc destructive E2E writes; use the controlled P2 path with `finance_ai_e2e`.

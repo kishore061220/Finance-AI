@@ -298,7 +298,8 @@ recorded here rather than silently changed.
 
 - API: `394 passed` (includes every regression test above).
 - ML: `81 passed`. Web: `146 passed`, typecheck + lint + build clean. Mobile:
-  `60 passed`, typecheck clean, lint 0 errors / 24 warnings.
+  `85 passed`, typecheck clean, lint 0 errors / 24 warnings.
+  Mobile sign-in now supports Google (device verification pending).
 - Android: `:app:assembleDebug` BUILD SUCCESSFUL; merged manifest carries
   `RECEIVE_SMS` and `com.financeai.sms.SmsReceiver`.
 

@@ -9,7 +9,8 @@ BLOCKED report. Do not repeat T1-T5 and do not fabricate Firebase/ML results.
 
 ## T1-T5 - PASS (prior work, re-verified)
 - Web: Firebase-only session via `onIdTokenChanged`, dev-token path removed, `project_id` consistency check; tests updated with `firebaseMock`; 146 passed; typecheck + lint + build clean.
-- Mobile: Firebase-only via `onIdTokenChanged`, dev-token path and `DEV_TOKEN_KEY` removed, project consistency; mocks/tests updated; 60 passed; typecheck clean, lint 24 warnings / 0 errors.
+- Mobile: Firebase-only via `onIdTokenChanged`, dev-token path and `DEV_TOKEN_KEY` removed, project consistency; mocks/tests updated; 85 passed; typecheck clean, lint 24 warnings / 0 errors.
+- Mobile sign-in now supports Google (device verification pending).
 - API: `/api/auth/config` returns `project_id`; backend auth unchanged; 394 tests pass (includes the audit fixes in [completion-audit.md](completion-audit.md)).
 - Docs: `docs/firebase-setup.md`, `docs/verification.md`, `docs/completion-audit.md`, README/.env.example updated.
 
@@ -17,7 +18,7 @@ BLOCKED report. Do not repeat T1-T5 and do not fabricate Firebase/ML results.
 - API: 394 passed
 - ML: 81 passed (parity subset 10 passed)
 - Web: 146 passed (10 files)
-- Mobile: 60 passed (5 suites)
+- Mobile: 85 passed (8 suites)
 - Android: `:app:assembleDebug` BUILD SUCCESSFUL (~19.8 MB APK); `bundle:android` exit 0
 
 ## T6 (shared backend + database) - PASS
@@ -28,7 +29,7 @@ BLOCKED report. Do not repeat T1-T5 and do not fabricate Firebase/ML results.
 
 ## T7 (feature UI) - PASS
 - Web: `ReportsPage`, `FamilyPage`, `AssistantPage` implemented and wired into routes/nav; endpoint/type fixes for reports + assistant + family; typecheck + lint clean; 146 tests pass.
-- Mobile: `ReportsScreen`, `FamilyScreen`, `AssistantScreen` implemented, wired into `MoreStackNavigator` and the `More` hub; typed APIs/wire types added; typecheck clean; lint 0 errors; 60 tests pass.
+- Mobile: `ReportsScreen`, `FamilyScreen`, `AssistantScreen` implemented, wired into `MoreStackNavigator` and the `More` hub; typed APIs/wire types added; typecheck clean; lint 0 errors; 85 tests pass.
 
 ## T8 (ML) - PASS
 - Artifacts present (`fraud_model.json` + `.pkl`): random_forest `roc_auc 0.7577`, `avg_precision 0.0866`, `precision 0.0213`, `recall 0.3333`, `f1 0.0401`, `thr 0.5`, `rows_used 282982`.
