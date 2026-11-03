@@ -40,6 +40,8 @@ module.exports = {
     '^@react-native-firebase/auth$': '<rootDir>/__mocks__/@react-native-firebase-auth.js',
     '^@react-native-firebase/messaging$':
       '<rootDir>/__mocks__/@react-native-firebase-messaging.js',
+    '^@react-native-google-signin/google-signin$':
+      '<rootDir>/__mocks__/@react-native-google-signin-google-signin.js',
     '^@react-native-ml-kit/text-recognition$':
       '<rootDir>/__mocks__/@react-native-ml-kit-text-recognition.js',
     '^react-native-image-picker$': '<rootDir>/__mocks__/react-native-image-picker.js',

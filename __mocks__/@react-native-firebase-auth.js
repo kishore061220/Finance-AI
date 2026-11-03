@@ -11,6 +11,17 @@
 const state = {
   user: null,
   observers: [],
+  credentialError: null,
+  credentialUser: { email: 'google@example.com', emailVerified: true },
+};
+
+/**
+ * The modular Google provider. `credential` only packages the Google idToken in
+ * the shape Firebase's `signInWithCredential` expects; it does not verify it.
+ */
+const GoogleAuthProvider = {
+  PROVIDER_ID: 'google.com',
+  credential: jest.fn((token, secret) => ({ providerId: 'google.com', token, secret })),
 };
 
 function emit() {
@@ -84,6 +95,18 @@ const auth = {
     return state.user;
   }),
 
+  /**
+   * The modular Google sign-in. It sets the same in-memory user and notifies
+   * observers exactly like the email mocks, so the session provider's
+   * `onIdTokenChanged` path runs unchanged.
+   */
+  signInWithCredential: jest.fn(async (_authInstance, _credential) => {
+    if (state.credentialError) throw state.credentialError;
+    state.user = makeUser(state.credentialUser);
+    emit();
+    return { user: state.user };
+  }),
+
   getIdToken: jest.fn(async () => 'mock-id-token'),
 };
 
@@ -116,18 +139,32 @@ function __setFirebaseUser(user) {
   emit();
 }
 
+function __setGoogleSignInCredentialError(error) {
+  state.credentialError = error;
+}
+
+function __setGoogleSignInUser(user) {
+  state.credentialUser = user;
+}
+
 function __reset() {
   state.user = null;
   state.observers = [];
+  state.credentialError = null;
+  state.credentialUser = { email: 'google@example.com', emailVerified: true };
   jest.clearAllMocks();
 }
 
 module.exports = {
   __esModule: true,
   __setFirebaseUser,
+  __setGoogleSignInCredentialError,
+  __setGoogleSignInUser,
   __reset,
   default: { auth: () => auth, ...auth },
+  GoogleAuthProvider,
   signInWithEmailAndPassword: auth.signInWithEmailAndPassword,
+  signInWithCredential: auth.signInWithCredential,
   createUserWithEmailAndPassword: auth.createUserWithEmailAndPassword,
   updateProfile: auth.updateProfile,
   signOut: auth.signOut,

@@ -27,12 +27,14 @@ import {
   Spinner,
 } from '../components/ui';
 import { useSession, isFirebaseAvailable } from '../auth/SessionProvider';
+import { GoogleSignInCancelled, isGoogleSignInConfigured } from '../services/googleSignIn';
 import { space, styles, type } from '../theme';
 
 type Mode = 'signIn' | 'register';
 
 export default function LoginScreen() {
-  const { status, config, firebaseProjectIssue, signInWithEmail, signUp } = useSession();
+  const { status, config, firebaseProjectIssue, signInWithEmail, signUp, signInWithGoogle } =
+    useSession();
 
   const [mode, setMode] = useState<Mode>('signIn');
   const [email, setEmail] = useState('');
@@ -45,6 +47,7 @@ export default function LoginScreen() {
   const serverSaysFirebase = config?.firebase_enabled ?? false;
   const decisionKnown = config !== null;
   const canOfferForms = serverSaysFirebase || (buildFirebase && !decisionKnown);
+  const googleConfigured = isGoogleSignInConfigured();
 
   const run = useCallback(async (action: () => Promise<void>) => {
     setBusy(true);
@@ -65,6 +68,22 @@ export default function LoginScreen() {
         await signUp(email.trim(), password, name.trim());
       } else {
         await signInWithEmail(email.trim(), password);
+      }
+    });
+  };
+
+  const submitGoogle = () => {
+    void run(async () => {
+      try {
+        await signInWithGoogle();
+      } catch (cause) {
+        if (cause instanceof GoogleSignInCancelled) {
+          // Closing the Google account chooser is not an error. Clear the busy
+          // state here and swallow it, so no banner is shown.
+          setBusy(false);
+          return;
+        }
+        throw cause;
       }
     });
   };
@@ -163,6 +182,19 @@ export default function LoginScreen() {
             loading={busy}
             disabled={email.trim() === '' || password === '' || (mode === 'register' && name.trim() === '')}
           />
+
+          <Button
+            label="Continue with Google"
+            variant="secondary"
+            onPress={submitGoogle}
+            disabled={busy || firebaseProjectIssue !== null || !googleConfigured}
+          />
+
+          {!googleConfigured ? (
+            <Text style={[type.small, styles.centeredText]}>
+              Google sign-in is not configured.
+            </Text>
+          ) : null}
 
           {config?.registration_enabled ? (
             <Button

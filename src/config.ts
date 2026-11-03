@@ -32,3 +32,16 @@ export const API_BASE_URL = API_BASE_URL_OVERRIDE ?? defaultApiBaseUrl();
 
 /** How often the fraud and notification badge counts are refreshed, in ms. */
 export const BADGE_POLL_INTERVAL_MS = 60_000;
+
+/**
+ * The OAuth *Web* client id for Firebase project `finance-fd3f3`.
+ *
+ * Read from the `client_type: 3` entry in `android/app/google-services.json`.
+ * This is a public Google OAuth identifier, not a secret, and it must be the Web
+ * client (never the Android client id and never a client secret). Google Sign-In
+ * needs it to mint an `idToken` that Firebase can verify. When it is null the
+ * Google button is disabled and the flow fails with "Google sign-in is not
+ * configured" instead of inventing a credential.
+ */
+export const GOOGLE_WEB_CLIENT_ID: string | null =
+  '955954466904-8nusq1njm0is17jdmaht1rvh26b855nl.apps.googleusercontent.com';

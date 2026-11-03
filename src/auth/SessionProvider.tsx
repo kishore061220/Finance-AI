@@ -33,6 +33,11 @@ import React, {
 import { ApiError, configureAuth, setToken } from '../services/api';
 import { authApi } from '../services/endpoints';
 import { firebaseAuth, firebaseProjectId, isFirebaseAvailable } from '../services/firebase';
+import {
+  getGoogleIdToken,
+  googleSignOut,
+  GoogleSignInCancelled,
+} from '../services/googleSignIn';
 import { pushService } from '../services/push';
 import type { AuthConfig, UserResponse } from '../types';
 
@@ -58,7 +63,40 @@ export interface SessionState {
   firebaseProjectIssue: FirebaseProjectIssue;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+}
+
+/**
+ * Turn Firebase's provider errors into sentences a user can act on.
+ *
+ * Google's own failures are already mapped in `services/googleSignIn.ts`; this
+ * covers only the errors Firebase raises after it is handed the Google token.
+ */
+function googleFirebaseErrorMessage(error: unknown): string {
+  const code =
+    typeof error === 'object' && error !== null
+      ? (error as { code?: unknown }).code
+      : null;
+
+  if (typeof code === 'string') {
+    switch (code) {
+      case 'auth/network-request-failed':
+        return 'Cannot reach Firebase. Check your connection and try again.';
+      case 'auth/account-exists-with-different-credential':
+        return 'An account already exists for this email with a different sign-in method. Sign in that way first.';
+      case 'auth/user-disabled':
+        return 'This account has been disabled.';
+      case 'auth/invalid-credential':
+        return 'Google sign-in could not be completed. Please try again.';
+      default:
+        break;
+    }
+  }
+
+  return error instanceof Error && error.message
+    ? error.message
+    : 'Google sign-in failed.';
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -178,6 +216,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [adoptToken],
   );
 
+  const signInWithGoogle = useCallback(async () => {
+    const auth = await firebaseAuth();
+    if (!auth) {
+      throw new Error(
+        'Google sign-in needs Firebase. This build has no google-services.json; see the README.',
+      );
+    }
+
+    // A cancellation is a normal outcome and must reach the caller untouched so
+    // the screen can stay silent. Only Firebase failures are translated below.
+    const idToken = await getGoogleIdToken();
+
+    try {
+      const { GoogleAuthProvider, signInWithCredential } = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+      await adoptToken(await userCredential.user.getIdToken());
+    } catch (error) {
+      if (error instanceof GoogleSignInCancelled) throw error;
+      throw new Error(googleFirebaseErrorMessage(error));
+    }
+  }, [adoptToken]);
+
   const signUp = useCallback(
     async (email: string, password: string, name: string) => {
       const auth = await firebaseAuth();
@@ -214,6 +275,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // account on this device does not inherit the previous one's alerts.
     await pushService.unregisterCurrentDevice();
 
+    // Best effort: forget the Google session before Firebase signs out. Never
+    // throws, so it cannot trap the user in a signed-in shell.
+    await googleSignOut();
+
     const auth = await firebaseAuth();
     if (auth) {
       const { signOut: firebaseSignOut } = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
@@ -245,9 +310,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       firebaseProjectIssue,
       signInWithEmail,
       signUp,
+      signInWithGoogle,
       signOut,
     }),
-    [status, user, config, firebaseProjectIssue, signInWithEmail, signUp, signOut],
+    [
+      status,
+      user,
+      config,
+      firebaseProjectIssue,
+      signInWithEmail,
+      signUp,
+      signInWithGoogle,
+      signOut,
+    ],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
