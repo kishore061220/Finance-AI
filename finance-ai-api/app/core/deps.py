@@ -73,6 +73,18 @@ def get_current_user(
             select(User).where(User.email == identity.email)
         ).scalar_one_or_none()
         if existing is not None:
+            if existing.firebase_uid is not None:
+                # The UID lookup above already missed, so this row is bound to a
+                # *different* Firebase identity. Never rewrite an existing link:
+                # a second identity asserting the same email must not take over
+                # the account (and all of its data) from the first.
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "This email is already linked to a different sign-in "
+                        "method. Sign in with the original method."
+                    ),
+                )
             if not identity.email_verified:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,

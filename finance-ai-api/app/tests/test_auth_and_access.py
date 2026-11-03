@@ -10,6 +10,8 @@ from __future__ import annotations
 import importlib
 from datetime import datetime
 
+import pytest
+
 from app.core import config as config_module
 from app.core import security as security_module
 from app.tests.conftest import mint_token, resolve_user, seed_transaction, seed_user
@@ -261,6 +263,162 @@ class TestUserProvisioning:
         refreshed = db.get(User, victim.id)
         # The legacy row was not claimed by the attacker.
         assert refreshed.firebase_uid is None
+
+    def test_bound_account_cannot_be_relinked_by_a_different_verified_uid(
+        self, client, db
+    ):
+        """A second verified identity must not overwrite an existing binding."""
+        from app.models.user import User
+
+        owner = seed_user(
+            db, "linked@example.com", "Linked Owner", firebase_uid="uid-original"
+        )
+
+        response = client.get(
+            "/api/auth/me",
+            headers={
+                "Authorization": f"Bearer {mint_token('uid-other', 'linked@example.com')}"
+            },
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "This email is already linked to a different sign-in method. "
+            "Sign in with the original method."
+        )
+
+        db.expire_all()
+        refreshed = db.get(User, owner.id)
+        assert refreshed.firebase_uid == "uid-original"
+
+    def test_bound_account_is_refused_even_with_an_unverified_token(self, client, db):
+        """A bound row is protected before the verified-email check runs."""
+        from app.models.user import User
+
+        owner = seed_user(
+            db, "bound@example.com", "Bound Owner", firebase_uid="uid-bound"
+        )
+        token = security_module.issue_dev_token(
+            subject="uid-unverified",
+            email="bound@example.com",
+            email_verified=False,
+        )
+
+        response = client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 409
+
+        db.expire_all()
+        refreshed = db.get(User, owner.id)
+        assert refreshed.firebase_uid == "uid-bound"
+
+    def test_original_identity_still_resolves_the_row_after_a_attempted_takeover(
+        self, client, db
+    ):
+        from app.models.user import User
+
+        owner = seed_user(
+            db, "owner@example.com", "Owner", firebase_uid="uid-owner"
+        )
+
+        failed = client.get(
+            "/api/auth/me",
+            headers={
+                "Authorization": f"Bearer {mint_token('uid-intruder', 'owner@example.com')}"
+            },
+        )
+        assert failed.status_code == 409
+
+        response = client.get(
+            "/api/auth/me",
+            headers={
+                "Authorization": f"Bearer {mint_token('uid-owner', 'owner@example.com')}"
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["id"] == owner.id
+
+    def test_second_identity_cannot_read_the_accounts_transactions(self, client, db):
+        """A rejected identity must not see the bound account's data."""
+        owner = seed_user(
+            db, "private@example.com", "Private", firebase_uid="uid-private"
+        )
+        seed_transaction(db, owner.id, merchant="Owner Secret Purchase")
+
+        takeover_headers = {
+            "Authorization": f"Bearer {mint_token('uid-second', 'private@example.com')}"
+        }
+        assert client.get("/api/auth/me", headers=takeover_headers).status_code == 409
+
+        response = client.get("/api/transactions", headers=takeover_headers)
+        assert response.status_code in (401, 403, 409)
+        if response.status_code == 200:  # pragma: no cover - defensive
+            merchants = {item["merchant"] for item in response.json()["items"]}
+            assert "Owner Secret Purchase" not in merchants
+
+    @pytest.mark.parametrize("local_verified", [True, False])
+    def test_bound_account_takeover_is_refused_regardless_of_local_verification(
+        self, client, db, local_verified
+    ):
+        """The local row's own verified flag must not authorize a relink."""
+        from app.models.user import User
+
+        owner = seed_user(
+            db, "local@example.com", "Local", firebase_uid="uid-local"
+        )
+        owner.email_verified = local_verified
+        db.commit()
+
+        response = client.get(
+            "/api/auth/me",
+            headers={
+                "Authorization": f"Bearer {mint_token('uid-new', 'local@example.com')}"
+            },
+        )
+        assert response.status_code == 409
+
+        db.expire_all()
+        refreshed = db.get(User, owner.id)
+        assert refreshed.firebase_uid == "uid-local"
+        assert refreshed.email_verified == local_verified
+
+    def test_first_identity_keeps_the_row_when_a_second_identity_shares_the_email(
+        self, client, db
+    ):
+        """Two identities, one email: only the first may link."""
+        from app.models.user import User
+
+        legacy = seed_user(db, "shared@example.com", "Shared")
+        assert legacy.firebase_uid is None
+
+        first = client.get(
+            "/api/auth/me",
+            headers={
+                "Authorization": f"Bearer {mint_token('uid-first', 'shared@example.com')}"
+            },
+        )
+        assert first.status_code == 200
+        assert first.json()["id"] == legacy.id
+
+        second = client.get(
+            "/api/auth/me",
+            headers={
+                "Authorization": f"Bearer {mint_token('uid-second', 'shared@example.com')}"
+            },
+        )
+        assert second.status_code == 409
+
+        again = client.get(
+            "/api/auth/me",
+            headers={
+                "Authorization": f"Bearer {mint_token('uid-first', 'shared@example.com')}"
+            },
+        )
+        assert again.status_code == 200
+        assert again.json()["id"] == legacy.id
+
+        db.expire_all()
+        assert db.get(User, legacy.id).firebase_uid == "uid-first"
 
     def test_account_without_email_is_refused(self, client):
         """A token with no email cannot be provisioned - it has no identity key."""

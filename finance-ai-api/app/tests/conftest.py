@@ -290,6 +290,13 @@ def resolve_user(db, firebase_uid: str, email: str) -> int:
 
     user = db.query(User).filter(User.email == email).first()
     if user is not None:
+        if user.firebase_uid is not None:
+            # Mirror ``get_current_user``: an existing Firebase binding is
+            # never rewritten, even by a test helper.
+            raise RuntimeError(
+                "resolve_user refuses to relink an account that already has a "
+                "different Firebase UID"
+            )
         user.firebase_uid = firebase_uid
         db.commit()
         return user.id
