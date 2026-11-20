@@ -30,6 +30,7 @@ const compactFormatter = new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',
   notation: 'compact',
+  minimumFractionDigits: 0,
   maximumFractionDigits: 1,
 })
 
