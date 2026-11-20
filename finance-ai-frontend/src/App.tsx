@@ -31,6 +31,8 @@ const FamilyPage = lazy(async () => import('@/pages/FamilyPage'))
 const AssistantPage = lazy(async () => import('@/pages/AssistantPage'))
 const ProfilePage = lazy(async () => import('@/pages/ProfilePage'))
 const SettingsPage = lazy(async () => import('@/pages/SettingsPage'))
+const NotificationsPage = lazy(async () => import('@/pages/NotificationsPage'))
+const CapturePage = lazy(async () => import('@/pages/CapturePage'))
 const LoginPage = lazy(async () => import('@/pages/LoginPage'))
 const NotFoundPage = lazy(async () => import('@/pages/NotFoundPage'))
 
@@ -69,6 +71,8 @@ export default function App() {
           <Route path="assistant" element={<AssistantPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="capture" element={<CapturePage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

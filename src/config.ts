@@ -18,7 +18,7 @@ import { Platform } from 'react-native';
  * A physical device cannot reach `10.0.2.2` or `127.0.0.1` - those refer to the
  * device itself, or to the emulator's own view of the host.
  */
-export const API_BASE_URL_OVERRIDE: string | null = null;
+export const API_BASE_URL_OVERRIDE: string | null = 'http://127.0.0.1:8000';
 
 /** The host machine, as seen from the current platform. */
 export function defaultApiBaseUrl(): string {

@@ -170,8 +170,8 @@ function toApiError(error: AxiosError<FastAPIErrorBody>): ApiError {
   if (!response) {
     // No response: DNS failure, refused connection, or the timeout above.
     return new ApiError(
-      'Cannot reach the API. Check that the server is running and that the ' +
-        'base URL is correct.',
+      `Cannot reach the API at ${API_BASE_URL}. Start the backend and, on a physical Android phone, ` +
+        'run `adb reverse tcp:8000 tcp:8000` before retrying.',
       0,
     );
   }

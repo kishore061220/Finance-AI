@@ -6,7 +6,7 @@
  * between the two paths.
  */
 
-import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import {
   Alert,
@@ -77,12 +77,14 @@ function TransactionForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldError, setFieldError] = useState<string | null>(null)
+  const savingRef = useRef(false)
 
   const update = (key: keyof FormState, value: string) =>
     setForm((previous) => ({ ...previous, [key]: value }))
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (savingRef.current) return
     setError(null)
     setFieldError(null)
 
@@ -116,6 +118,7 @@ function TransactionForm({
       transaction_date: fromDateTimeLocal(form.transaction_date),
     }
 
+    savingRef.current = true
     setSaving(true)
     try {
       if (editing) {
@@ -127,6 +130,7 @@ function TransactionForm({
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Could not save the transaction.')
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -196,12 +200,19 @@ function TransactionForm({
           </Field>
 
           <Field label="EMI type" htmlFor="tx-emi" hint="Leave blank if this is not an EMI.">
-            <TextInput
+            <Select
               id="tx-emi"
-              placeholder="HOME_LOAN"
               value={form.emi_type}
               onChange={(event) => update('emi_type', event.target.value)}
-            />
+            >
+              <option value="">None</option>
+              <option value="Home Loan">Home Loan</option>
+              <option value="Car Loan">Car Loan</option>
+              <option value="Personal Loan">Personal Loan</option>
+              <option value="Education Loan">Education Loan</option>
+              <option value="Credit Card">Credit Card</option>
+              <option value="Other">Other</option>
+            </Select>
           </Field>
         </div>
 

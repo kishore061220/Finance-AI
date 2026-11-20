@@ -54,6 +54,22 @@ class TestTransactionCrud:
         assert fetched.status_code == 200
         assert fetched.json()["id"] == created.json()["id"]
 
+    def test_create_with_timezone_aware_web_datetime(self, client, auth):
+        payload = tx_payload(
+            merchant="Web Repro Cafe",
+            description="Web expense creation verification",
+            transaction_date="2026-11-19T00:21:00.000Z",
+            emi_type=None,
+        )
+        created = client.post("/api/transactions", headers=auth, json=payload)
+        assert created.status_code == 201
+        assert created.json()["merchant"] == "Web Repro Cafe"
+
+        fetched = client.get(
+            f"/api/transactions/{created.json()['id']}", headers=auth
+        )
+        assert fetched.status_code == 200
+
     def test_update(self, client, auth):
         created = client.post("/api/transactions", headers=auth, json=tx_payload())
         updated = client.patch(

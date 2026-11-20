@@ -15,6 +15,7 @@ import { fraudApi } from '@/lib/endpoints'
 const NAV: { to: string; label: string }[] = [
   { to: '/', label: 'Dashboard' },
   { to: '/transactions', label: 'Transactions' },
+  { to: '/capture', label: 'Capture' },
   { to: '/budgets', label: 'Budgets' },
   { to: '/fraud', label: 'Fraud alerts' },
   { to: '/loans', label: 'Loans' },
@@ -22,6 +23,7 @@ const NAV: { to: string; label: string }[] = [
   { to: '/family', label: 'Family' },
   { to: '/assistant', label: 'Assistant' },
   { to: '/profile', label: 'Profile' },
+  { to: '/notifications', label: 'Notifications' },
   { to: '/settings', label: 'Settings' },
 ]
 

@@ -161,6 +161,7 @@ module.exports = {
   __setGoogleSignInCredentialError,
   __setGoogleSignInUser,
   __reset,
+  getAuth: jest.fn(() => auth),
   default: { auth: () => auth, ...auth },
   GoogleAuthProvider,
   signInWithEmailAndPassword: auth.signInWithEmailAndPassword,

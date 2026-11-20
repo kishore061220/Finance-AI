@@ -75,16 +75,28 @@ export async function firebaseAuth(): Promise<FirebaseAuthTypes.Module | null> {
 
   try {
     const authModule = require('@react-native-firebase/auth') as AuthModule;
-    // The first entry is this app's own `FirebaseApp`. There is no `defaultApp()`
-    // fallback on purpose: without a configured project there is no app to
-    // authenticate against, and guessing one would produce a module that loads and
-    // then fails on its first call.
-    const app: FirebaseApp | undefined = appModule.default.apps[0];
+
+    // React Native Firebase 24 exposes the stable modular API. Use getApp()/getApps()
+    // and getAuth(app) instead of assuming the namespaced default export shape.
+    const app: FirebaseApp | undefined = typeof appModule.getApps === 'function'
+      ? appModule.getApps()[0]
+      : appModule.default.apps[0];
     if (!app) {
       availability = false;
       return null;
     }
-    cachedAuth = authModule.default.auth(app);
+
+    if (typeof authModule.getAuth === 'function') {
+      cachedAuth = authModule.getAuth(app);
+    } else {
+      // Compatibility fallback for older/tested module implementations.
+      const legacyAuth = authModule.default as unknown as
+        | ((app?: FirebaseApp) => FirebaseAuthTypes.Module)
+        | { auth(app?: FirebaseApp): FirebaseAuthTypes.Module };
+      cachedAuth = typeof legacyAuth === 'function'
+        ? legacyAuth(app)
+        : legacyAuth.auth(app);
+    }
     return cachedAuth;
   } catch {
     // A failed load leaves the app unable to sign in, which the login screen
@@ -115,6 +127,14 @@ export function resetFirebaseCache(): void {
  */
 export function firebaseProjectId(): string | null {
   const appModule = loadAppModule();
-  const app: FirebaseApp | undefined = appModule?.default.apps[0];
-  return app?.options?.projectId ?? null;
+  if (!appModule) return null;
+
+  try {
+    const app: FirebaseApp | undefined = typeof appModule.getApps === 'function'
+      ? appModule.getApps()[0]
+      : appModule.default.apps[0];
+    return app?.options?.projectId ?? null;
+  } catch {
+    return null;
+  }
 }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -45,6 +45,13 @@ class TransactionCreate(BaseModel):
     def _validate_type(cls, v: str) -> str:
         return _coerce_type(v)
 
+    @field_validator("transaction_date")
+    @classmethod
+    def _normalize_transaction_date(cls, v: datetime) -> datetime:
+        if v.tzinfo is not None:
+            return v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
     @field_validator("emi_type")
     @classmethod
     def _validate_emi(cls, v: Optional[str]) -> Optional[str]:
@@ -72,6 +79,13 @@ class TransactionUpdate(BaseModel):
     @classmethod
     def _validate_type(cls, v: Optional[str]) -> Optional[str]:
         return None if v is None else _coerce_type(v)
+
+    @field_validator("transaction_date")
+    @classmethod
+    def _normalize_transaction_date(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is not None and v.tzinfo is not None:
+            return v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
 
     @field_validator("emi_type")
     @classmethod

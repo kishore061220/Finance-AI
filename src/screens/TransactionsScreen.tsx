@@ -6,12 +6,15 @@
  * not collapse to a spinner on every "load more".
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert as RNAlert,
   DeviceEventEmitter,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   Text,
   View,
 } from 'react-native';
@@ -25,7 +28,7 @@ import {
   todayIso,
 } from '../lib/format';
 import { transactionApi } from '../services/endpoints';
-import type { Transaction, TransactionType } from '../types';
+import type { Transaction, TransactionSource, TransactionType } from '../types';
 import { colors, radius, space, styles, type } from '../theme';
 
 const PAGE_SIZE = 25;
@@ -352,11 +355,13 @@ export function TransactionForm({
   transaction,
   categories,
   initial,
+  source = 'MANUAL',
   onClose,
   onSaved,
 }: {
   transaction?: Transaction | null;
   categories: string[];
+  source?: TransactionSource;
   /** Pre-filled values from a parsed SMS or receipt, for confirmation. */
   initial?: Partial<{
     amount: string;
@@ -390,8 +395,12 @@ export function TransactionForm({
   const [emiType, setEmiType] = useState(transaction?.emi_type ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savingRef = useRef(false);
 
   const save = async () => {
+    if (savingRef.current) return;
+
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -409,20 +418,43 @@ export function TransactionForm({
 
       if (transaction) {
         await transactionApi.update(transaction.id, payload);
+        RNAlert.alert('Transaction updated', 'The changes were saved to your account.');
       } else {
-        await transactionApi.create({ ...payload, source: 'MANUAL' });
+        await transactionApi.create({ ...payload, source });
+        RNAlert.alert(
+          'Expense saved',
+          source === 'OCR'
+            ? 'The reviewed receipt expense was saved.'
+            : source === 'SMS'
+              ? 'The reviewed SMS expense was saved.'
+              : 'The transaction was saved to your account.',
+        );
       }
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save the transaction.');
+    } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const amountInvalid = !isPositiveDecimal(amount);
+  const dateInvalid = !isValidIsoDate(date);
 
   return (
-    <View style={[styles.screen, { padding: space.lg, gap: space.lg }]}>
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+    >
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl * 2 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+      >
       <View style={styles.row}>
         <Text style={type.title}>{transaction ? 'Edit' : 'Add transaction'}</Text>
         <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.headerButton} />
@@ -483,29 +515,44 @@ export function TransactionForm({
         <Input value={description} onChangeText={setDescription} accessibilityLabel="Description" />
       </Field>
 
-      <Field label="Date" hint="YYYY-MM-DD">
+      <Field
+        label="Date"
+        hint="YYYY-MM-DD"
+        error={date !== '' && dateInvalid ? 'Enter a valid date in YYYY-MM-DD format.' : null}
+      >
         <Input
           value={date}
           onChangeText={setDate}
           placeholder="2026-01-31"
           autoCapitalize="none"
           accessibilityLabel="Transaction date"
+          invalid={date !== '' && dateInvalid}
         />
       </Field>
 
       {transactionType === 'expense' ? (
         <Field label="EMI type" hint="Leave blank if this is not an instalment.">
-          <Input value={emiType} onChangeText={setEmiType} accessibilityLabel="EMI type" />
+          <View style={[styles.row, styles.chipRow]}>
+            {['', 'Home Loan', 'Car Loan', 'Personal Loan', 'Education Loan', 'Credit Card', 'Other'].map((option) => (
+              <FilterChip
+                key={option || 'none'}
+                label={option || 'None'}
+                active={emiType === option}
+                onPress={() => setEmiType(option)}
+              />
+            ))}
+          </View>
         </Field>
       ) : null}
 
       <Button
-        label={transaction ? 'Save changes' : 'Add transaction'}
+        label={transaction ? 'Save changes' : 'Save expense'}
         onPress={() => { void save(); }}
         loading={saving}
-        disabled={amountInvalid || category.trim() === '' || date.trim() === ''}
+        disabled={saving || amountInvalid || category.trim() === '' || dateInvalid}
       />
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -520,4 +567,14 @@ export function isPositiveDecimal(value: string): boolean {
   const trimmed = value.trim();
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return false;
   return Number(trimmed) > 0;
+}
+
+export function isValidIsoDate(value: string): boolean {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+  const [year, month, day] = trimmed.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
 }

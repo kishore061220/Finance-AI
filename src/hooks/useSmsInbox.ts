@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { errorMessage } from '../services/api';
+import { isApiError } from '../services/api';
 import { smsQueueSize, startSmsInbox } from '../services/smsDetector';
 import type { SmsIngestMessage } from '../types';
 
@@ -47,7 +47,21 @@ export function useSmsInbox(enabled: boolean): SmsInboxState {
         );
         setRevision((count) => count + 1);
       },
-      onError: (cause) => setError(errorMessage(cause, 'Could not upload a bank message.')),
+      onError: (cause) => {
+        if (isApiError(cause)) {
+          if (cause.status === 0) {
+            setError('SMS could not be uploaded: the API is unreachable. Check the server and adb reverse tcp:8000 tcp:8000.');
+          } else if (cause.status >= 500) {
+            setError('SMS processing could not be completed by the server. The message remains queued for retry.');
+          } else if (cause.status === 401 || cause.status === 403) {
+            setError('SMS upload was rejected because the account session is not authenticated. Sign in again.');
+          } else {
+            setError('SMS upload was rejected. The message remains queued for retry.');
+          }
+        } else {
+          setError(cause instanceof Error ? cause.message : 'Could not upload a bank message.');
+        }
+      },
       onQueueChange: setQueueSize,
     });
 

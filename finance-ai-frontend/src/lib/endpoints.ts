@@ -354,10 +354,42 @@ export interface SmsParseResult {
   notes: string[]
 }
 
+export interface SmsCaptureResult {
+  amount: string | null
+  transaction_type: 'income' | 'expense' | null
+  category: string | null
+  merchant: string | null
+  transaction_date: string | null
+  bank_reference: string | null
+  confidence: number
+  parser: string
+  notes: string[]
+}
+
+export interface OcrCaptureLine {
+  description: string
+  amount: string
+  transaction_type: 'income' | 'expense' | null
+  date: string | null
+}
+
+export interface OcrCaptureResult {
+  merchant: string | null
+  total: string | null
+  transaction_date: string | null
+  currency: string | null
+  line_items: OcrCaptureLine[]
+  confidence: number
+}
+
 export const categorizationApi = {
   categories: (): Promise<{ categories: string[] }> => get('/api/categorization/categories'),
   parseSms: (rawText: string): Promise<SmsParseResult> =>
     post<SmsParseResult>('/api/categorization/sms/parse', { raw_text: rawText }),
   commitSms: (rawText: string): Promise<{ transaction: Transaction }> =>
     post('/api/categorization/sms/commit', { raw_text: rawText }),
+  parseOcr: (text: string): Promise<OcrCaptureResult> =>
+    post<OcrCaptureResult>('/api/categorization/ocr/parse', { text }),
+  commitOcr: (text: string): Promise<{ created: number; merchant: string | null; transaction_ids: number[] }> =>
+    post('/api/categorization/ocr/commit', { text }),
 }

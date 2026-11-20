@@ -72,7 +72,7 @@ export default function CaptureScreen() {
       setReceipt(result);
       setParsed({
         // A receipt's line items are the real signal; the total is the fallback
-        // for a single-item capture.
+        // for a single-item capture or a receipt with no separable lines.
         amount:
           result.line_items.length === 1
             ? result.line_items[0].amount
@@ -153,6 +153,7 @@ export default function CaptureScreen() {
       <TransactionForm
         categories={CATEGORIES}
         initial={parsed}
+        source={mode === 'receipt' ? 'OCR' : 'SMS'}
         onClose={reset}
         onSaved={reset}
       />
